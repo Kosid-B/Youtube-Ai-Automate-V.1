@@ -41,7 +41,8 @@ export type ChannelRow = {
   niche: string | null
   youtube_channel_id: string | null
   oauth_secret_id: string | null
-  quota_project_key: string
+  /** null = ให้ระบบเลือก project จากคลังให้ · มีค่า = ลูกค้าปักหมุดเอง (BYO) */
+  quota_project_key: string | null
   created_at: string
 }
 
@@ -114,6 +115,14 @@ export type JobRow = {
   updated_at: string
 }
 
+export type YoutubeProjectRow = {
+  key: string
+  label: string
+  daily_limit: number
+  enabled: boolean
+  created_at: string
+}
+
 export type CreditLedgerRow = {
   id: string
   org_id: string
@@ -143,6 +152,7 @@ export type Database = {
       video_metrics: TableShape<VideoMetricRow>
       jobs: TableShape<JobRow>
       credit_ledger: TableShape<CreditLedgerRow>
+      youtube_projects: TableShape<YoutubeProjectRow>
     }
     Views: Record<string, never>
     Functions: {
@@ -183,6 +193,18 @@ export type Database = {
       release_quota: {
         Args: { p_project_key: string; p_units: number }
         Returns: undefined
+      }
+      reserve_quota_for_channel: {
+        Args: { p_channel_id: string; p_units: number }
+        Returns: string | null
+      }
+      reserve_quota_from_pool: {
+        Args: { p_units: number }
+        Returns: string | null
+      }
+      create_org: {
+        Args: { p_name: string; p_slug: string; p_starting_credits?: number }
+        Returns: OrganizationRow
       }
       quota_resets_at: {
         Args: Record<string, never>

@@ -1,6 +1,6 @@
 import type { WorkerClient } from '../supabase'
 import { type JobPayloads, DeferJobSignal } from '@/lib/jobs'
-import { QUOTA_COST, reserveQuota, releaseQuota, quotaResetsAt } from '@/lib/quota'
+import { QUOTA_COST, reserveQuotaForChannel, releaseQuota, quotaResetsAt } from '@/lib/quota'
 import { checkOriginality, isBlocked, type ChecklistKey } from '@/lib/originality'
 
 const CORPUS_LIMIT = 200
@@ -104,15 +104,13 @@ export async function youtubeUpload(
 
   // ── 3. จองโควตา แล้วค่อยยิง ────────────────────────────────────────
   const units = QUOTA_COST.videosInsert
-  const reserved = await reserveQuota(db, channel.quota_project_key, units)
+  // ระบบเลือก project ให้เอง — ลูกค้าทุกรายไม่ได้แย่งโควตาก้อนเดียวกัน
+  const projectKey = await reserveQuotaForChannel(db, channel.id, units)
 
-  if (!reserved) {
-    // โควตาเต็ม = เลื่อนไปวันถัดไป ห้าม retry ทันที
+  if (!projectKey) {
+    // เต็มทุก project = เลื่อนไปวันถัดไป ห้าม retry ทันที
     const runAfter = await quotaResetsAt(db)
-    throw new DeferJobSignal(
-      runAfter,
-      `โควตา YouTube ของ project ${channel.quota_project_key} เต็มแล้ว เลื่อนไปรอบถัดไป`,
-    )
+    throw new DeferJobSignal(runAfter, 'โควตา YouTube เต็มทุก project แล้ว เลื่อนไปรอบถัดไป')
   }
 
   try {
@@ -136,8 +134,8 @@ export async function youtubeUpload(
 
     console.log(`[youtube_upload] ${video.id} → ${youtubeVideoId}`)
   } catch (error) {
-    // ยิงไม่ถึง Google = โควตายังไม่ถูกใช้จริง คืนให้ project
-    await releaseQuota(db, channel.quota_project_key, units)
+    // ยิงไม่ถึง Google = โควตายังไม่ถูกใช้จริง คืนให้ project ตัวที่จองไป
+    await releaseQuota(db, projectKey, units)
     throw error
   }
 }

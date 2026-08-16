@@ -47,7 +47,12 @@ Deploy: Next.js บน Vercel, worker แยกบน Railway/Fly (render กิ
 
 ### 4. โควตา YouTube API
 - โควตา 10,000 units/วัน/project · `videos.insert` = 1,600 units → ~6 คลิป/project/วัน
-- ต้องเรียก `reserveQuota()` ก่อนยิง API จริงทุกครั้ง ห้ามยิงแล้วค่อยนับ
+- ⚠️ **โควตาผูกกับ Google Cloud project ของ "แอป" ไม่ใช่ของช่องลูกค้า**
+  ห้ามผูก project ตายตัวกับช่อง ไม่งั้นลูกค้าทุกรายแย่งโควตาก้อนเดียวกัน (~6 คลิป/วันทั้งระบบ)
+  ใช้ `reserveQuotaForChannel()` ให้ระบบเลือก project จากคลัง `youtube_projects` ให้
+  จะรับลูกค้าเพิ่มก็เพิ่มแถวใน `youtube_projects` — ~6 คลิป/วันต่อหนึ่ง project
+- `channels.quota_project_key` = ปักหมุด project เอง (ลูกค้าองค์กรที่เอา project ตัวเองมา) · null = ใช้คลัง
+- ต้องเรียกจองโควตาก่อนยิง API จริงทุกครั้ง ห้ามยิงแล้วค่อยนับ
 - นับวันตามเวลาแปซิฟิก (`quota_day()`) เพราะ YouTube รีเซ็ตโควตาเที่ยงคืนโซนนั้น
 - โควตาเต็ม = เลื่อน job ไปวันถัดไปด้วย `defer_job` ห้าม retry ทันที
   (จะเผาโควตา project อื่นเปล่า ๆ) · `defer_job` คืน attempt ให้ด้วย ไม่นับเป็นความล้มเหลว
@@ -104,6 +109,21 @@ pnpm test                # vitest — ตรรกะบริสุทธิ์
 - หลัง push ต้องรัน `pnpm db:types` แล้ว commit `database.types.ts` ไปด้วย
 - `src/lib/database.types.ts` ตอนนี้เป็นฉบับเขียนมือ ให้ทับด้วยของจริงเมื่อลิงก์ Supabase ได้แล้ว
 
+## เส้นทางผู้ใช้ (ทำแล้ว)
+
+```
+/login          ลิงก์ทางอีเมล (ไม่มีรหัสผ่าน = ไม่มีหน้าลืมรหัสผ่าน)
+/auth/callback  แลกโค้ดเป็น session
+/onboarding     เปิดองค์กร + ช่องแรก · slug ระบบสร้างให้ ไม่ถามผู้ใช้
+/               สายการผลิต + ปุ่มหลักปุ่มเดียว
+/scripts/new    สั่ง AI เขียนสคริปต์ (บอกราคาเครดิตก่อนกด)
+/scripts/[id]   อ่านสคริปต์แยกเป็นฉาก + ติ๊ก checklist + ส่งเข้าคิวตัดต่อ
+```
+
+ผู้ใช้ใหม่สร้างองค์กรเองผ่าน rpc `create_org` (ไม่ต้องรอแอดมิน)
+ต้องเป็น rpc เพราะ policy ของ `organizations` ให้เห็นเฉพาะองค์กรที่ตัวเองเป็นสมาชิก
+ผู้ใช้จึง insert ตรง ๆ ไม่ได้ · เครดิตเริ่มต้นตั้งได้จากฝั่ง server เท่านั้น
+
 ## งานค้าง (เรียงตามลำดับความสำคัญ)
 
 1. OAuth flow YouTube + เก็บ refresh token ใน Supabase Vault
@@ -119,8 +139,8 @@ pnpm test                # vitest — ตรรกะบริสุทธิ์
 3. `metrics_sync` ดึง CTR / AVD / RPM จาก YouTube Analytics API ลง `video_metrics` (รอข้อ 1)
 4. Stripe webhook → เติม `organizations.credits` ผ่าน `grant_credits` + บันทึก `credit_ledger`
 5. Realtime subscription บน `jobs` ให้บอร์ด dashboard ขยับเอง
-6. หน้า UI สำหรับติ๊ก checklist ความเป็นต้นฉบับก่อนสั่ง render
-   (ตอนนี้ API รับ `checklist` มาแล้วแต่ยังไม่มีหน้าจอให้ติ๊ก)
+6. เติมเครดิตด้วยตัวเอง — ตอนนี้ `create_org` เปิดให้ 0 เครดิต ลูกค้าใหม่ยังสั่งอะไรไม่ได้
+   จนกว่าจะมีทางเติม (Stripe ข้อ 4) หรือแอดมินเปิดให้ผ่าน `grant_credits`
 
 ## สไตล์ UI
 

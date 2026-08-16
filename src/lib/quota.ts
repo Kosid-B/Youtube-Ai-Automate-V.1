@@ -37,6 +37,29 @@ export async function reserveQuota(
   return data === true
 }
 
+/**
+ * จองโควตาให้ช่องหนึ่ง โดยระบบเลือก Google Cloud project ให้เอง
+ *
+ * คืน key ของ project ที่จองได้ (ต้องใช้ key นี้ตอนคืนโควตาถ้ายิงพลาด)
+ * หรือ null ถ้าเต็มทุก project แล้ว
+ *
+ * ⚠️ โควตา YouTube ผูกกับ project ของ "แอป" ไม่ใช่ของช่องลูกค้า
+ * ห้ามกลับไปผูก project ตายตัวกับช่อง ไม่งั้นลูกค้าทุกรายจะแย่งโควตาก้อนเดียวกัน
+ */
+export async function reserveQuotaForChannel(
+  db: Client,
+  channelId: string,
+  units: number,
+): Promise<string | null> {
+  const { data, error } = await db.rpc('reserve_quota_for_channel', {
+    p_channel_id: channelId,
+    p_units: units,
+  })
+
+  if (error) throw new Error(`จองโควตาไม่สำเร็จ: ${error.message}`)
+  return (data as string | null) ?? null
+}
+
 /** คืนโควตาที่จองไว้ เมื่อการเรียก API ล้มเหลวก่อนถึงตัวนับของ Google */
 export async function releaseQuota(
   db: Client,

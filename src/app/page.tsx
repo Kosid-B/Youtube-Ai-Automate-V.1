@@ -1,3 +1,5 @@
+import Link from 'next/link'
+import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { Section, type Row } from '@/components/section'
 import { AutoRefresh } from '@/components/auto-refresh'
@@ -31,16 +33,14 @@ export default async function Page() {
     data: { user },
   } = await supabase.auth.getUser()
 
-  if (!user) {
-    return (
-      <main className="mx-auto max-w-2xl px-5 py-16 sm:px-6">
-        <h1 className="text-2xl font-semibold">เข้าสู่ระบบเพื่อดูสายการผลิต</h1>
-        <p className="mt-3 leading-relaxed text-ink-muted">
-          หน้านี้แสดงคลิปและงานที่กำลังเดินอยู่ขององค์กรที่คุณเป็นสมาชิก
-        </p>
-      </main>
-    )
-  }
+  if (!user) redirect('/login')
+
+  // ยังไม่มีองค์กร = ผู้ใช้ใหม่ พาไปเปิดพื้นที่ทำงานก่อน
+  const { count: orgCount } = await supabase
+    .from('org_members')
+    .select('org_id', { count: 'exact', head: true })
+
+  if (!orgCount) redirect('/onboarding')
 
   // RLS คัดให้เหลือเฉพาะองค์กรที่ผู้ใช้เป็นสมาชิกอยู่แล้ว
   const [{ data: videos }, { data: jobs }] = await Promise.all([
@@ -129,12 +129,23 @@ export default async function Page() {
       {/* หน้าจอขยับเองเฉพาะตอนมีงานเดินอยู่ ไม่มีงานก็ไม่ต้องโพล */}
       <AutoRefresh enabled={active.length > 0} />
 
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">สายการผลิต</h1>
-        {/* Selective Attention: บรรทัดเดียวที่ตอบว่า "ตอนนี้เป็นยังไง" ก่อนจะไล่อ่านรายการ */}
-        <p className="mt-1.5 text-sm text-ink-muted">
-          {summary.length > 0 ? summary.join(' · ') : 'ยังไม่มีอะไรอยู่ในสายการผลิต'}
-        </p>
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">สายการผลิต</h1>
+          {/* Selective Attention: บรรทัดเดียวที่ตอบว่า "ตอนนี้เป็นยังไง" ก่อนจะไล่อ่านรายการ */}
+          <p className="mt-1.5 text-sm text-ink-muted">
+            {summary.length > 0 ? summary.join(' · ') : 'ยังไม่มีอะไรอยู่ในสายการผลิต'}
+          </p>
+        </div>
+
+        {/* Hick's Law: หน้านี้มีปุ่มหลักปุ่มเดียว · Fitts's Law: เต็มความกว้างบนมือถือ */}
+        <Link
+          href="/scripts/new"
+          className="w-full rounded-lg px-4 py-2.5 text-center font-medium transition sm:w-auto"
+          style={{ color: 'var(--color-base)', background: 'var(--color-ink)' }}
+        >
+          สร้างคลิปใหม่
+        </Link>
       </header>
 
       {/* หมวดนี้โผล่เฉพาะตอนมีของจริง หัวข้อว่างเปล่าไม่ได้ช่วยอะไรนอกจากกินที่ */}
