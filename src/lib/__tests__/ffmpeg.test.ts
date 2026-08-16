@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
@@ -52,20 +52,19 @@ describe('buildFfmpegCommand', () => {
     expect(filterGraph.indexOf('subtitles=')).toBeGreaterThan(filterGraph.indexOf('xfade'))
   })
 
-  it('escape เครื่องหมาย : ในพาธ ไม่งั้น ffmpeg อ่านเป็นตัวคั่นออปชัน', () => {
-    const { filterGraph } = buildFfmpegCommand(makePlan(), {
-      subtitlePath: '/mnt/งาน 10:30/sub.srt',
-      outputPath: '/tmp/out.mp4',
-    })
-    expect(filterGraph).toContain('/mnt/งาน 10\\:30/sub.srt')
-  })
-
-  it('escape backslash ในพาธด้วย', () => {
+  /**
+   * ffmpeg แกะสตริงสองรอบ (filtergraph แล้วค่อยออปชันของ filter)
+   * escape ชั้นเดียวจึงถูกกินหมดตั้งแต่รอบแรก — ต้องใส่ให้เหลือถึงรอบสอง
+   *
+   * เทสต์นี้เคยเขียนผิดเป็นชั้นเดียวแล้วผ่านเขียว จนบั๊กหลุดไปโผล่บนเครื่อง Windows
+   * ตัวที่จับได้จริงคือเทสต์เรนเดอร์ข้างล่างที่ยิง ffmpeg จริงกับพาธแบบนั้น
+   */
+  it('escape : และ \\ แบบสองชั้น ไม่งั้น ffmpeg อ่านชื่อไฟล์ขาดกลางคัน', () => {
     const { filterGraph } = buildFfmpegCommand(makePlan(), {
       subtitlePath: 'C:\\งาน\\sub.srt',
       outputPath: '/tmp/out.mp4',
     })
-    expect(filterGraph).toContain('C\\:\\\\งาน\\\\sub.srt')
+    expect(filterGraph).toContain('C\\\\:\\\\\\\\งาน\\\\\\\\sub.srt')
   })
 
   it('ตัดความยาวที่ผลรวมเสียง ไม่ใช่ความยาวภาพที่มีหางเฟด', () => {
@@ -214,4 +213,58 @@ describe.skipIf(!hasFfmpeg)('เรนเดอร์จริงด้วย ff
     expect(strip.length).toBe(640 * 100)
     expect(Math.max(...strip)).toBeGreaterThan(200)
   }, 120_000)
+
+  /**
+   * พาธซับที่มี : และ \ ต้องเรนเดอร์ผ่าน — เป็นเรื่องปกติบน Windows เพราะทุกพาธ
+   * ขึ้นต้นด้วย C:\ อยู่แล้ว บั๊ก escape จึงพังทันทีที่นั่นแต่เงียบสนิทบน Linux
+   *
+   * Windows ห้ามใช้ : กับ \ ในชื่อโฟลเดอร์ จึงสร้างพาธแบบนี้ที่นั่นไม่ได้ (และไม่ต้องสร้าง
+   * เพราะเทสต์ตัวอื่นได้ C:\ ติดมาเองอยู่แล้ว) เทสต์นี้จึงมีไว้ให้ฝั่ง POSIX จับบั๊ก
+   * แทน แทนที่จะรอไปโผล่บนเครื่องผู้ใช้
+   */
+  it.skipIf(process.platform === 'win32')(
+    'เรนเดอร์ผ่านแม้พาธซับมี : และ \\ (จำลองพาธแบบ Windows)',
+    () => {
+      const trickyDir = join(workDir, 'C:\\Users\\ทดสอบ')
+      mkdirSync(trickyDir, { recursive: true })
+
+      const image = join(workDir, 'tricky.png')
+      execFileSync('ffmpeg', [
+        '-y', '-f', 'lavfi', '-i', 'color=c=0x101820:s=640x360', '-frames:v', '1', image,
+      ], { stdio: 'ignore' })
+
+      const sound = join(workDir, 'tricky.wav')
+      execFileSync('ffmpeg', [
+        '-y', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=2',
+        '-ar', '24000', '-ac', '1', sound,
+      ], { stdio: 'ignore' })
+
+      const plan = buildRenderPlan({
+        scenes: splitIntoScenes('พาธมีอักขระที่ต้อง escape'),
+        durationsSec: [2],
+        imagePaths: [image],
+        audioPaths: [sound],
+        canvas: { width: 640, height: 360, fps: 24 },
+      })
+
+      const srtPath = join(trickyDir, 'sub.srt')
+      writeFileSync(srtPath, toSrt(plan.subtitles), 'utf8')
+
+      const outputPath = join(workDir, 'tricky.mp4')
+      execFileSync(
+        'ffmpeg',
+        buildFfmpegCommand(plan, { subtitlePath: srtPath, outputPath, fontSize: 20 }).args,
+        { stdio: 'pipe' },
+      )
+
+      // ซับต้องถูกวาดจริง ไม่ใช่แค่ ffmpeg ไม่ error
+      const strip = execFileSync('ffmpeg', [
+        '-v', 'quiet', '-ss', '1', '-i', outputPath, '-frames:v', '1',
+        '-vf', 'crop=640:100:0:260', '-f', 'rawvideo', '-pix_fmt', 'gray', '-',
+      ], { maxBuffer: 10 * 1024 * 1024 })
+
+      expect(Math.max(...strip)).toBeGreaterThan(200)
+    },
+    120_000,
+  )
 })

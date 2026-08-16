@@ -184,9 +184,22 @@ export function buildFfmpegCommand(plan: RenderPlan, options: FfmpegOptions): Ff
   return { args, filterGraph: filters.join(';') }
 }
 
-/** ค่าใน filtergraph ต้อง escape ทั้ง \ : ' และ , ไม่งั้น path ที่มีอักขระพวกนี้ทำ filter พัง */
+/**
+ * escape ค่าที่ส่งเป็นออปชันของ filter — ต้องทำ "สองชั้น" ไม่ใช่ชั้นเดียว
+ *
+ * ffmpeg แกะสตริงสองรอบ: รอบแรกระดับ filtergraph รอบสองระดับออปชันของ filter
+ * ใส่ `\` ชั้นเดียวจึงถูกกินหมดตั้งแต่รอบแรก แล้วรอบสองเห็นอักขระดิบ
+ *
+ * พังชัดที่สุดกับพาธ Windows: `C:\Users\...\sub.srt` escape ชั้นเดียวได้
+ * `C\:\\Users\\...` → ffmpeg อ่านชื่อไฟล์เป็นแค่ "C" แล้วโยนที่เหลือไปเป็นออปชัน
+ * ตัวถัดไป (original_size) จนล้มด้วย "Unable to parse ... as image size"
+ * ทดสอบจริงแล้วทั้งบน Linux (โฟลเดอร์จำลองที่มี : และ \ ในชื่อ) และ Windows
+ */
 function escapeFilterValue(value: string): string {
-  return value.replace(/\\/g, '\\\\').replace(/:/g, '\\:').replace(/'/g, "\\'")
+  return value
+    .replace(/\\/g, '\\\\\\\\')
+    .replace(/:/g, '\\\\:')
+    .replace(/'/g, "\\\\'")
 }
 
 function round(seconds: number): number {
