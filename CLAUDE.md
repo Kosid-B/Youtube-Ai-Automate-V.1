@@ -75,7 +75,27 @@ supabase db push         # apply migration
 pnpm db:types            # regen database.types.ts — รันทุกครั้งหลังแก้ schema
 supabase db reset        # ล้าง local db แล้ว apply ใหม่ทั้งหมด
 pnpm typecheck           # tsc --noEmit
+pnpm test                # vitest — ตรรกะบริสุทธิ์ (originality, scenes, subtitles)
 ```
+
+## การผลิตวิดีโอ — ข้อจำกัดที่ตัดสินใจไว้แล้ว
+
+```
+รูปแบบ  : คลิปยาว 16:9 ภาพนิ่งเลื่อนช้า (Ken Burns) + เสียงบรรยาย + ซับไทย
+งบ      : ต่ำกว่า 10 บาท/คลิป — เป็นเพดานจริง ไม่ใช่เป้าหมายคร่าว ๆ
+เสียง   : Google Chirp 3 HD (ยืนยันแล้วว่ามีเสียงไทย) ฟรี 1M ตัวอักษร/เดือน
+ภาพ    : stock ฟรีเท่านั้น — AI image gen ทำให้เกินงบทันที
+```
+
+**หน่วยของการสเกลคือ 1 Google Cloud project ≈ 5–6 คลิป/วัน** เพราะสองเพดานมาบรรจบกันพอดี:
+โควตา `videos.insert` ให้ ~6 คลิป/วัน/project และโควตา TTS ฟรีให้ ~148 คลิป/เดือน (≈5/วัน)
+จะโตเกินนี้ต้องเพิ่ม project ไม่ใช่เพิ่มความถี่
+
+ต้นทุนจริงต่อคลิป 8 นาที (~6,700 ตัวอักษร) ดูได้จาก `src/lib/costs.ts`
+⚠️ ตัวเลขในไฟล์นั้นยังไม่รวม thinking token ของโมเดล — ค่าจริงสูงกว่า
+ถ้าต้องลดต้นทุน ให้ปรับ `output_config.effort` ก่อน อย่าเพิ่งลดชั้นโมเดล
+
+**worker host ต้องมี `ffmpeg` และฟอนต์ไทย** (เช่น Loma หรือ Sarabun) ไม่งั้นซับไตเติลจะเป็นสี่เหลี่ยม
 
 ## แนวทางแก้ schema
 
@@ -89,7 +109,13 @@ pnpm typecheck           # tsc --noEmit
 1. OAuth flow YouTube + เก็บ refresh token ใน Supabase Vault
    (schema เว้นช่อง `channels.oauth_secret_id` ไว้แล้ว ห้ามเก็บ token เป็น plaintext)
    `getChannelAccessToken()` ใน `worker/handlers/youtube-upload.ts` รอตรงนี้อยู่
-2. `video_render` handler จริง — ffmpeg บน worker หรือเรียก render service ภายนอก
+2. `video_render` handler จริง — เหลือ 4 ชิ้นจาก 6:
+   - [x] แบ่งสคริปต์เป็นฉาก (`src/lib/scenes.ts`)
+   - [x] ซับไตเติลจากความยาวเสียงจริง (`src/lib/subtitles.ts`)
+   - [ ] เรียก TTS จริง (Chirp 3 HD) + อ่านความยาวไฟล์เสียง
+   - [ ] หาภาพ stock ต่อฉาก
+   - [ ] ประกอบด้วย ffmpeg (Ken Burns + เสียง + ซับ)
+   - [ ] ปกคลิป
 3. `metrics_sync` ดึง CTR / AVD / RPM จาก YouTube Analytics API ลง `video_metrics` (รอข้อ 1)
 4. Stripe webhook → เติม `organizations.credits` ผ่าน `grant_credits` + บันทึก `credit_ledger`
 5. Realtime subscription บน `jobs` ให้บอร์ด dashboard ขยับเอง
