@@ -3,3 +3,7 @@
 allowBuilds:
   unrs-resolver: false
   esbuild: false
+  # sharp ติดมากับ Next.js ไว้ย่อรูปใน next/image ซึ่งโปรเจคนี้ไม่ได้ใช้
+  # (เราประกอบภาพด้วย ffmpeg เอง) และไบนารีสำเร็จรูป @img/sharp-* ก็ลงมาให้อยู่แล้ว
+  # ไม่ตัดสินใจไว้ตรงนี้ = pnpm ออกด้วย exit 1 ทุกครั้งที่ install → pnpm test/dev/worker รันไม่ได้เลย
+  sharp: false
