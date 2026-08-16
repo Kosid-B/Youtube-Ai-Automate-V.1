@@ -1,3 +1,5 @@
-# unrs-resolver เป็น native resolver ของ eslint — ไม่ต้องรัน build script
+# ตัดสินใจไว้ล่วงหน้าว่าไม่ต้องรัน build script ของสองตัวนี้
+# (ทั้งคู่มี prebuilt binary มากับ optional dependency อยู่แล้ว ทดสอบแล้วใช้งานได้ปกติ)
 allowBuilds:
   unrs-resolver: false
+  esbuild: false
