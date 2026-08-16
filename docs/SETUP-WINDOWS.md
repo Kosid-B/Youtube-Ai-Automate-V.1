@@ -24,9 +24,13 @@ winget install Git.Git
 **pnpm** (โปรเจคนี้ใช้ pnpm ไม่ใช่ npm — มี `pnpm-lock.yaml` และ `pnpm-workspace.yaml`):
 
 ```powershell
-corepack enable
-corepack prepare pnpm@latest --activate
+npm install -g pnpm
+pnpm --version
 ```
+
+> ในเน็ตจะเจอวิธี `corepack enable` เป็นส่วนใหญ่ — ใช้ไม่ได้กับ Node 25 ขึ้นไป
+> เพราะ Node เลิกแถม corepack มาให้ตั้งแต่รุ่น 25 (รุ่น 24 LTS ลงมายังมี)
+> ลงผ่าน `npm install -g pnpm` ได้ผลเหมือนกันและใช้ได้กับ Node ทุกรุ่น
 
 **ffmpeg** — หัวใจของการประกอบคลิป ไม่มีตัวนี้ worker รันไม่ได้:
 
@@ -190,6 +194,7 @@ pnpm lint
 |---|---|
 | `ffmpeg : The term ... is not recognized` | ยังไม่ได้เปิด PowerShell ใหม่หลังลง winget |
 | `pnpm : ... cannot be loaded because running scripts is disabled` | รัน `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` |
+| `corepack : The term 'corepack' is not recognized` | Node 25+ ไม่มี corepack แล้ว — ใช้ `npm install -g pnpm` แทน (ข้อ 1) |
 | ซับหน้าตาไม่เหมือนที่ตั้งไว้ | `SUBTITLE_FONT` (ดูข้อ 5) |
 | งานค้างที่สถานะ `queued` ไม่ขยับ | ลืมรัน `pnpm worker` ในหน้าต่างที่สอง |
 | ได้ lockfile แปลก ๆ โผล่ที่ราก repo | รัน pnpm ผิดโฟลเดอร์ — ต้องอยู่ใน `yt-factory` |
