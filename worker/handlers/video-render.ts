@@ -26,6 +26,22 @@ function voice() {
 }
 
 /**
+ * ฟอนต์ซับต่างกันตามเครื่องที่รัน worker
+ *
+ * ค่าเริ่มต้น Loma มีเฉพาะบน Linux — เครื่องอื่นตั้งผ่าน env (Windows: "Leelawadee UI")
+ *
+ * ตั้งชื่อฟอนต์ผิดไม่ทำให้ ffmpeg ล้ม (ทดสอบแล้ว exit 0) และ libass ยัง fallback
+ * หาอักษรไทยจากฟอนต์อื่นในเครื่องมาวาดให้ ผลคือคลิปยังอ่านออกแต่หน้าตาซับไม่ใช่ที่เลือกไว้
+ * และไม่มีอะไรฟ้อง จึงต้องตั้งให้ตรงเครื่องเอง ไม่มีทางตรวจจับอัตโนมัติ
+ */
+function subtitleStyle() {
+  return {
+    fontName: process.env.SUBTITLE_FONT?.trim() || undefined,
+    fontsDir: process.env.SUBTITLE_FONTS_DIR?.trim() || undefined,
+  }
+}
+
+/**
  * ประกอบคลิปจากสคริปต์: แบ่งฉาก → หาภาพ → พากย์ → ประกอบด้วย ffmpeg → เก็บขึ้น Storage
  *
  * idempotent สองชั้น เพราะ retry ได้ถึง 3 ครั้ง และทุกขั้นเสียเงิน:
@@ -85,7 +101,11 @@ export async function videoRender(
     await writeFile(subtitlePath, toSrt(plan.subtitles), 'utf8')
 
     const outputPath = join(workDir, 'out.mp4')
-    const { args } = buildFfmpegCommand(plan, { subtitlePath, outputPath })
+    const { args } = buildFfmpegCommand(plan, {
+      subtitlePath,
+      outputPath,
+      ...subtitleStyle(),
+    })
 
     console.log(`[video_render] ${video.id} เริ่มประกอบ ${scenes.length} ฉาก ${plan.totalSeconds}s`)
     await run('ffmpeg', args, { timeout: FFMPEG_TIMEOUT_MS, maxBuffer: 32 * 1024 * 1024 })
