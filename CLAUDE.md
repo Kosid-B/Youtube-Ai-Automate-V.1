@@ -1,0 +1,105 @@
+# CLAUDE.md
+
+บริบทถาวรของโปรเจค yt-factory — อ่านไฟล์นี้ก่อนแก้โค้ดทุกครั้ง
+
+## โปรเจคนี้คืออะไร
+
+SaaS สายการผลิตคลิป YouTube ด้วย AI สำหรับตลาดไทย ผู้ใช้เป็นเจ้าของช่องที่ไม่ออกกล้อง
+Stack: Next.js 15 App Router · Supabase (Postgres + RLS + Storage) · Anthropic API · YouTube Data API v3
+Deploy: Next.js บน Vercel, worker แยกบน Railway/Fly (render กินเวลาเกิน timeout ของ serverless)
+
+จุดขายไม่ใช่ "AI เขียนสคริปต์" แต่คือสายการผลิตที่ไม่พังตอนสเกล ถ้าฟีเจอร์ไหนไม่ช่วยเรื่อง
+ความซ้ำของเนื้อหา โควตา API หรือคิวงานค้าง ให้ตั้งคำถามก่อนว่าจำเป็นจริงไหม
+
+## ภาษา
+
+- ผู้ใช้สื่อสารภาษาไทย ตอบภาษาไทย
+- comment ในโค้ดและ UI string เป็นภาษาไทย
+- ชื่อตัวแปร ฟังก์ชัน ตาราง คอลัมน์ เป็นภาษาอังกฤษเสมอ
+- commit message ภาษาอังกฤษ
+
+## กติกาที่ห้ามละเมิด
+
+### 1. RLS
+- ทุกตารางที่มีข้อมูลผู้ใช้ต้องมี `org_id` และเปิด RLS
+- policy เรียกผ่าน `is_org_member(org_id)` หรือ `has_org_role(org_id, roles[])` เท่านั้น
+  ห้ามเขียน subquery ไปที่ `org_members` ตรง ๆ ใน policy เพราะจะเกิด RLS เรียกซ้ำตัวเอง
+- helper function ทุกตัวต้องเป็น `security definer` + `set search_path = public`
+- ห่อ `auth.uid()` ด้วย `(select auth.uid())` เสมอ ไม่งั้น planner เรียกซ้ำทุกแถว
+- เพิ่มตารางใหม่ = ต้องเขียน policy ในคอมมิตเดียวกัน ห้ามค้างไว้ทีหลัง
+
+### 2. service role key
+- `createServiceClient()` ข้าม RLS ทั้งหมด ใช้ได้เฉพาะใน `worker/` และ route handler ฝั่ง server
+- ห้าม import `@/lib/supabase/server` จากไฟล์ที่มี `"use client"`
+  (ไฟล์นั้น import `server-only` ไว้ ถ้าเผลอ import จาก client build จะพังทันที)
+- ตรวจสิทธิ์ผู้ใช้ด้วย `createClient()` (ผูก session) ก่อนเสมอ แล้วค่อยใช้ service client ทำงานจริง
+  ดูตัวอย่างที่ `src/app/api/scripts/generate/route.ts`
+- `worker/` ใช้ `createWorkerClient()` ใน `worker/supabase.ts` แทน เพราะ `server-only` รันนอก Next ไม่ได้
+
+### 3. Originality Guard
+- ทุกเส้นทางที่นำสคริปต์ไป render หรืออัป ต้องผ่าน originality check ก่อน
+  (`src/app/api/videos/render/route.ts` และ `worker/handlers/youtube-upload.ts`)
+- verdict `block` = หยุดที่ API layer ตอบ 409 ห้ามมี flag ให้ผู้ใช้กดข้าม
+- เกณฑ์อยู่ที่ `src/lib/originality.ts` (similarity ≥ 0.4 หรือ checklist ผ่าน < 3/5 = block)
+  แก้เกณฑ์ได้ แต่ต้องคุยกับเจ้าของโปรเจคก่อน เพราะเป็นตัวกันช่องโดนตัดรายได้
+- similarity ใช้ Jaccard บน character 5-gram ไม่ใช่ระดับคำ เพราะภาษาไทยไม่เว้นวรรคระหว่างคำ
+- เหตุผล: นโยบาย Inauthentic Content ของ YouTube (ก.ค. 2025)
+
+### 4. โควตา YouTube API
+- โควตา 10,000 units/วัน/project · `videos.insert` = 1,600 units → ~6 คลิป/project/วัน
+- ต้องเรียก `reserveQuota()` ก่อนยิง API จริงทุกครั้ง ห้ามยิงแล้วค่อยนับ
+- นับวันตามเวลาแปซิฟิก (`quota_day()`) เพราะ YouTube รีเซ็ตโควตาเที่ยงคืนโซนนั้น
+- โควตาเต็ม = เลื่อน job ไปวันถัดไปด้วย `defer_job` ห้าม retry ทันที
+  (จะเผาโควตา project อื่นเปล่า ๆ) · `defer_job` คืน attempt ให้ด้วย ไม่นับเป็นความล้มเหลว
+- ถ้าจองโควตาแล้วยิงไม่ถึง Google ให้ `releaseQuota()` คืน
+
+### 5. เครดิต
+- ตัดเครดิตด้วย RPC `consume_credits` เท่านั้น ห้าม `update organizations set credits = ...` ตรง ๆ
+  (มี trigger `organizations_guard_credits` ปฏิเสธการแก้ที่ไม่ได้มาทาง RPC)
+- ตัดตอนเข้าคิว ไม่ใช่ตอนงานเสร็จ เพื่อกันการยิงซ้ำ (`enqueue_job` ทำในทรานแซกชันเดียวกัน)
+- งานล้มเหลวถาวร (`dead`) คืนเครดิตผ่าน `grant_credits` ใน `worker/index.ts`
+  กันคืนซ้ำด้วย `ref_id` = job id ฝั่งฐานข้อมูล
+
+### 6. คิวงาน
+- worker ดึงงานผ่าน `claim_job` เท่านั้น (ใช้ `FOR UPDATE SKIP LOCKED`)
+- handler ทุกตัวต้อง idempotent เพราะ retry ได้ถึง 3 ครั้ง
+- จบงานด้วย `complete_job` เสมอ แม้ throw — ไม่งั้นงานค้างสถานะ `claimed` ตลอดไป
+- retry ใช้ backoff แบบทวีคูณ (2^attempts นาที) ครบ `max_attempts` แล้วเป็น `dead`
+
+## คำสั่งที่ใช้บ่อย
+
+```bash
+pnpm dev                 # Next.js
+pnpm worker              # worker คิวงาน (ต้องรันคู่กัน)
+supabase db push         # apply migration
+pnpm db:types            # regen database.types.ts — รันทุกครั้งหลังแก้ schema
+supabase db reset        # ล้าง local db แล้ว apply ใหม่ทั้งหมด
+pnpm typecheck           # tsc --noEmit
+```
+
+## แนวทางแก้ schema
+
+- แก้ schema = สร้าง migration ใหม่เสมอ ห้ามแก้ไฟล์ migration เดิมที่ push ไปแล้ว
+- ตั้งชื่อ `YYYYMMDDHHMMSS_คำอธิบายสั้น.sql`
+- หลัง push ต้องรัน `pnpm db:types` แล้ว commit `database.types.ts` ไปด้วย
+- `src/lib/database.types.ts` ตอนนี้เป็นฉบับเขียนมือ ให้ทับด้วยของจริงเมื่อลิงก์ Supabase ได้แล้ว
+
+## งานค้าง (เรียงตามลำดับความสำคัญ)
+
+1. OAuth flow YouTube + เก็บ refresh token ใน Supabase Vault
+   (schema เว้นช่อง `channels.oauth_secret_id` ไว้แล้ว ห้ามเก็บ token เป็น plaintext)
+   `getChannelAccessToken()` ใน `worker/handlers/youtube-upload.ts` รอตรงนี้อยู่
+2. `video_render` handler จริง — ffmpeg บน worker หรือเรียก render service ภายนอก
+3. `metrics_sync` ดึง CTR / AVD / RPM จาก YouTube Analytics API ลง `video_metrics` (รอข้อ 1)
+4. Stripe webhook → เติม `organizations.credits` ผ่าน `grant_credits` + บันทึก `credit_ledger`
+5. Realtime subscription บน `jobs` ให้บอร์ด dashboard ขยับเอง
+6. หน้า UI สำหรับติ๊ก checklist ความเป็นต้นฉบับก่อนสั่ง render
+   (ตอนนี้ API รับ `checklist` มาแล้วแต่ยังไม่มีหน้าจอให้ติ๊ก)
+
+## สไตล์ UI
+
+- dark เป็นค่าเริ่มต้น token อยู่ใน `src/app/globals.css` (`@theme`)
+- signal (เหลืองส้ม) = กำลังผลิต · live (เขียวมิ้นต์) = เผยแพร่แล้ว · block (แดง) = ถูกบล็อก/strike
+  ห้ามใช้สีทั้งสามนี้เพื่อการตกแต่ง ใช้สื่อสถานะเท่านั้น
+- ฟอนต์ไทย IBM Plex Sans Thai · ตัวเลขและโค้ดใช้ JetBrains Mono
+- เขียน copy จากมุมผู้ใช้ ไม่ใช่มุมระบบ — "ตั้งเวลาเผยแพร่" ไม่ใช่ "สร้าง scheduled job"

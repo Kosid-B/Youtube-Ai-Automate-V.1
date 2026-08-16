@@ -1,0 +1,36 @@
+@import 'tailwindcss';
+
+@theme {
+  /* พื้นหลัง/ตัวอักษร — dark เป็นค่าเริ่มต้น */
+  --color-base: #0b0d10;
+  --color-surface: #14171c;
+  --color-surface-2: #1c2027;
+  --color-line: #2a2f38;
+  --color-ink: #e8eaed;
+  --color-ink-muted: #9aa2ad;
+
+  /* สีสถานะ — ใช้สื่อสถานะเท่านั้น ห้ามใช้ตกแต่ง */
+  --color-signal: #f5a524; /* กำลังผลิต */
+  --color-live: #4ade9b; /* เผยแพร่แล้ว */
+  --color-block: #f0616d; /* ถูกบล็อก/strike */
+
+  --font-sans: var(--font-plex-thai), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, monospace;
+}
+
+html,
+body {
+  background: var(--color-base);
+  color: var(--color-ink);
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ตัวเลขและโค้ดใช้ mono เสมอ ให้คอลัมน์ตัวเลขเรียงตรงกัน */
+.tabular {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}

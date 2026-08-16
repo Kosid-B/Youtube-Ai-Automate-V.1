@@ -1,0 +1,3 @@
+# unrs-resolver เป็น native resolver ของ eslint — ไม่ต้องรัน build script
+allowBuilds:
+  unrs-resolver: false

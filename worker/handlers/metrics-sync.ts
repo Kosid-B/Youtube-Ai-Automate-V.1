@@ -1,0 +1,20 @@
+import type { WorkerClient } from '../supabase'
+import type { JobPayloads } from '@/lib/jobs'
+
+/**
+ * ดึง CTR / AVD / RPM จาก YouTube Analytics API ลง video_metrics
+ *
+ * ⚠️ ยังไม่ได้ทำ (งานค้างข้อ 4) — รอ OAuth flow (ข้อ 1) เพราะ Analytics API
+ * ต้องใช้ token ของเจ้าของช่อง
+ *
+ * เมื่อทำจริง: upsert ด้วย unique (video_id, day) เพื่อให้ retry ไม่สร้างแถวซ้ำ
+ * และใช้ YouTube Analytics API ซึ่งมีโควตาแยกจาก Data API v3
+ */
+export async function metricsSync(
+  _db: WorkerClient,
+  payload: JobPayloads['metrics_sync'],
+): Promise<void> {
+  throw new Error(
+    `ยังไม่ได้ทำ metrics_sync (ช่อง ${payload.channel_id}) — ดูงานค้างข้อ 4 ใน CLAUDE.md`,
+  )
+}
