@@ -105,3 +105,95 @@ export async function generateScript(brief: ScriptBrief): Promise<GeneratedScrip
 
   return JSON.parse(text) as GeneratedScript
 }
+
+const IMAGE_QUERY_SCHEMA = {
+  type: 'object',
+  properties: {
+    queries: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          scene_index: { type: 'integer' },
+          query: { type: 'string' },
+        },
+        required: ['scene_index', 'query'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['queries'],
+  additionalProperties: false,
+} as const
+
+const IMAGE_QUERY_SYSTEM = `คุณแปลงเนื้อหาแต่ละฉากของคลิปเป็นคำค้นภาพสต็อกภาษาอังกฤษ
+
+กติกา:
+- ตอบเป็นภาษาอังกฤษเท่านั้น เพราะคลังภาพสต็อกค้นภาษาไทยไม่เจอ
+- 2-4 คำต่อฉาก เป็นคำที่บรรยาย "ภาพที่ควรเห็น" ไม่ใช่สรุปเนื้อหา
+  เช่นฉากพูดถึงร้านกาแฟเจ๊ง → "empty coffee shop" ไม่ใช่ "business failure"
+- เลือกสิ่งที่ถ่ายเป็นภาพได้จริง หลีกเลี่ยงแนวคิดนามธรรม
+  ("teamwork meeting" ใช้ได้ · "success mindset" ใช้ไม่ได้)
+- อย่าใช้คำค้นซ้ำกันสองฉาก คลิปจะดูเหมือนวนภาพเดิม
+- ห้ามใส่ชื่อแบรนด์ ชื่อคนจริง หรือโลโก้`
+
+export type SceneImageQuery = { sceneIndex: number; query: string }
+
+/**
+ * หาคำค้นภาพภาษาอังกฤษให้ทุกฉากในคำขอเดียว
+ *
+ * เรียกรวมทีเดียวไม่ใช่ฉากละครั้ง เพราะโมเดลต้องเห็นทุกฉากพร้อมกัน
+ * ถึงจะเลี่ยงการให้คำค้นซ้ำกันได้ และประหยัดกว่ามาก
+ */
+export async function sceneImageQueries(
+  scenes: readonly { index: number; text: string }[],
+  context: { title: string; niche?: string | null },
+): Promise<SceneImageQuery[]> {
+  if (scenes.length === 0) return []
+
+  const response = await anthropic().messages.create({
+    model: SCRIPT_MODEL,
+    max_tokens: 4000,
+    thinking: { type: 'adaptive' },
+    output_config: {
+      effort: 'low',
+      format: { type: 'json_schema', schema: IMAGE_QUERY_SCHEMA },
+    },
+    system: IMAGE_QUERY_SYSTEM,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          `หัวข้อคลิป: ${context.title}`,
+          context.niche ? `แนวเนื้อหา: ${context.niche}` : null,
+          '',
+          'ฉาก:',
+          ...scenes.map((scene) => `[${scene.index}] ${scene.text}`),
+        ]
+          .filter((line) => line !== null)
+          .join('\n'),
+      },
+    ],
+  })
+
+  if (response.stop_reason === 'refusal') {
+    throw new Error('โมเดลปฏิเสธคำขอหาคำค้นภาพ')
+  }
+
+  const text = response.content.find((block) => block.type === 'text')?.text
+  if (!text) throw new Error('โมเดลไม่ได้ส่งคำค้นภาพกลับมา')
+
+  const parsed = JSON.parse(text) as { queries: { scene_index: number; query: string }[] }
+  const byIndex = new Map(parsed.queries.map((q) => [q.scene_index, q.query.trim()]))
+
+  // ฉากที่โมเดลข้ามไปต้องมีคำค้นสำรอง ไม่งั้นฉากนั้นไม่มีภาพแล้ว render ไม่ได้
+  return scenes.map((scene) => ({
+    sceneIndex: scene.index,
+    query: byIndex.get(scene.index) || fallbackQuery(context),
+  }))
+}
+
+/** คำค้นสำรองกลาง ๆ ที่ยังเข้ากับคลิปสายธุรกิจ ใช้เมื่อโมเดลไม่ได้ให้คำค้นของฉากนั้นมา */
+function fallbackQuery(context: { niche?: string | null }): string {
+  return context.niche?.trim() ? 'business workplace' : 'abstract background'
+}

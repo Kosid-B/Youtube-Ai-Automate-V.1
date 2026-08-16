@@ -123,6 +123,21 @@ export type YoutubeProjectRow = {
   created_at: string
 }
 
+export type VideoAssetRow = {
+  id: string
+  org_id: string
+  video_id: string
+  scene_index: number
+  provider: string
+  provider_id: string
+  photographer: string
+  photographer_url: string | null
+  source_url: string
+  storage_path: string | null
+  query: string | null
+  created_at: string
+}
+
 export type CreditLedgerRow = {
   id: string
   org_id: string
@@ -153,6 +168,7 @@ export type Database = {
       jobs: TableShape<JobRow>
       credit_ledger: TableShape<CreditLedgerRow>
       youtube_projects: TableShape<YoutubeProjectRow>
+      video_assets: TableShape<VideoAssetRow>
     }
     Views: Record<string, never>
     Functions: {
