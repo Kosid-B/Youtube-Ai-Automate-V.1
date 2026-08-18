@@ -99,10 +99,14 @@ notepad .env.local
 อ่านรายชื่อที่บัญชีคุณใช้ได้จริงก่อน:
 
 ```powershell
-pnpm exec tsx --env-file-if-exists=.env.local -e "import('./src/lib/tts.ts').then(m => m.listThaiVoices()).then(v => console.table(v))"
+pnpm voices
 ```
 
-เอาค่าในคอลัมน์ชื่อเสียงที่ขึ้นต้นด้วย `th-TH-Chirp3-HD-` ไปใส่ `GOOGLE_TTS_VOICE`
+จะพิมพ์ตารางเสียงทั้งหมด แล้วสรุปเฉพาะตัวที่ขึ้นต้น `th-TH-Chirp3-HD-` ให้ท้ายสุด
+คัดลอกไปใส่ `GOOGLE_TTS_VOICE` ใน `.env.local`
+
+ถ้าขึ้น `⚠️ ไม่พบ .env.local` แปลว่ารันผิดโฟลเดอร์ ต้องอยู่ใน `yt-factory`
+ถ้าขึ้น 403 แปลว่ายังไม่ได้เปิด Text-to-Speech API ในโปรเจค Google Cloud
 
 ---
 

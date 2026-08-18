@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "worker": "tsx --env-file-if-exists=.env.local worker/index.ts",
+    "worker": "tsx worker/index.ts",
+    "voices": "tsx scripts/voices.ts",
     "db:types": "supabase gen types typescript --linked > src/lib/database.types.ts",
     "test": "vitest run"
   },
