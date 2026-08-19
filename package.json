@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit",
     "worker": "tsx worker/index.ts",
     "voices": "tsx scripts/voices.ts",
+    "voice-sample": "tsx scripts/voice-sample.ts",
     "db:types": "supabase gen types typescript --linked > src/lib/database.types.ts",
     "test": "vitest run"
   },
