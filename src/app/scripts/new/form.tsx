@@ -61,12 +61,12 @@ export function NewScriptForm({
   return (
     <form onSubmit={submit} className="mt-8 space-y-5">
       {/*
-        Hick's Law: สองตัวเลือก แสดงเป็นปุ่มให้เห็นพร้อมกันเลย เร็วกว่า dropdown ที่ต้องกดเปิดก่อน
-        Law of Similarity: ปุ่มที่เลือกอยู่ต่างจากอีกปุ่มชัดเจน ไม่ต้องเพ่ง
+        Hick's Law: ตัวเลือกไม่กี่อัน แสดงเป็นปุ่มให้เห็นพร้อมกันเลย เร็วกว่า dropdown ที่ต้องกดเปิดก่อน
+        Law of Similarity: ปุ่มที่เลือกอยู่ต่างจากปุ่มอื่นชัดเจน ไม่ต้องเพ่ง
       */}
       <fieldset>
         <legend className="text-sm text-ink-muted">รูปแบบคลิป</legend>
-        <div className="mt-2 grid grid-cols-2 gap-2">
+        <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
           {(Object.keys(FORMATS) as VideoFormat[]).map((key) => {
             const spec = FORMATS[key]
             const active = format === key
@@ -82,15 +82,21 @@ export function NewScriptForm({
               >
                 <span className="block text-sm font-medium">{spec.label}</span>
                 {/* บอกความยาวจริงไปเลย ผู้ใช้จะได้ไม่ต้องเดาว่า "สั้น" คือแค่ไหน */}
-                <span className="mt-0.5 block text-xs text-ink-muted">
-                  {key === 'short'
-                    ? `~${spec.targetSeconds} วินาที · YouTube Shorts`
-                    : `~${Math.round(spec.targetSeconds / 60)} นาที`}
-                </span>
+                <span className="mt-0.5 block text-xs text-ink-muted">{formatHint(key)}</span>
               </button>
             )
           })}
         </div>
+        {/*
+          Tesler's Law: ความซับซ้อนของคลิปยาวพิเศษไม่หายไปไหน — ย้ายมาบอกตรงนี้
+          ดีกว่าปล่อยให้ผู้ใช้ไปเจอเองตอนงานค้างอยู่ในคิวนานผิดปกติ
+        */}
+        {FORMATS[format].useOutline && (
+          <p className="mt-2 text-xs text-ink-muted">
+            AI จะวางหัวข้อย่อยก่อน แล้วเขียนทีละท่อนต่อกัน — ใช้เวลาเขียนหลายนาที
+            และเปลืองโทเคนมากกว่าคลิปยาวปกติหลายเท่า
+          </p>
+        )}
       </fieldset>
 
       {channels.length > 1 && (
@@ -162,4 +168,15 @@ export function NewScriptForm({
       </button>
     </form>
   )
+}
+
+/** คำอธิบายความยาวใต้ชื่อรูปแบบ — วินาทีสำหรับคลิปสั้น นาทีสำหรับที่เหลือ */
+function formatHint(format: VideoFormat): string {
+  const spec = FORMATS[format]
+
+  if (format === 'short') {
+    return `~${spec.targetSeconds} วินาที · YouTube Shorts`
+  }
+
+  return `~${Math.round(spec.targetSeconds / 60)} นาที`
 }

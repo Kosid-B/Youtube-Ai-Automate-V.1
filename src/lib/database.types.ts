@@ -46,7 +46,12 @@ export type ContentFeaturesRow = {
   captured_at: string
 }
 
-export type VideoFormat = 'long' | 'short'
+/**
+ * ต้องตรงกับ enum video_format ในฐานข้อมูล และเป็นนิยามเดียวของทั้งโปรเจค
+ * (src/lib/formats.ts re-export ตัวนี้ ห้ามประกาศซ้ำที่นั่น — เคยประกาศซ้ำแล้ว
+ * ค่าที่เพิ่มใหม่ผ่าน typecheck ทั้งที่ insert ลงฐานข้อมูลไม่ได้)
+ */
+export type VideoFormat = 'long' | 'short' | 'feature'
 
 export type OrganizationRow = {
   id: string

@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 
 import { FORMATS, targetScriptChars, type VideoFormat } from '@/lib/formats'
 import { ideaContext, type IdeaBrief } from '@/lib/idea-angles'
+import type { Outline } from '@/lib/outline'
 import { THAI_CHARS_PER_SECOND } from '@/lib/scenes'
 
 /** โมเดลที่ใช้เขียนสคริปต์ */
@@ -308,4 +309,132 @@ export async function generateIdeas(brief: IdeaBrief): Promise<GeneratedIdea[]> 
 
   const parsed = JSON.parse(block.text) as { ideas: GeneratedIdea[] }
   return parsed.ideas
+}
+
+const OUTLINE_SCHEMA = {
+  type: 'object',
+  properties: {
+    title: { type: 'string' },
+    promise: { type: 'string' },
+    sections: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { heading: { type: 'string' }, covers: { type: 'string' } },
+        required: ['heading', 'covers'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['title', 'promise', 'sections'],
+  additionalProperties: false,
+} as const
+
+const OUTLINE_SYSTEM = `คุณวางโครงคลิป YouTube ยาวภาษาไทยสำหรับช่องธุรกิจ
+
+แบ่งเป็นท่อนที่ "จบในตัวเอง" — คนที่กระโดดมาดูกลางท่อนต้องยังเข้าใจได้
+แต่ละท่อนต้องตอบคนละคำถาม ห้ามเล่าเรื่องเดียวกันซ้ำในมุมต่างกันนิดเดียว
+
+promise คือสิ่งที่คนดูจะทำได้หลังดูจบ ต้องเป็นสิ่งที่จับต้องได้
+"เข้าใจเรื่องต้นทุนมากขึ้น" ใช้ไม่ได้ · "คำนวณต้นทุนจริงของสินค้าตัวเองได้" ใช้ได้
+
+เรียงท่อนตามลำดับที่คนต้องรู้จริง ๆ ไม่ใช่ตามที่ฟังดูเป็นระบบ`
+
+/** วางโครงคลิปยาวก่อนเขียน — ตรวจโครงถูกกว่าเขียนเสร็จแล้วพบว่าโครงพัง */
+export async function generateOutline(
+  brief: ScriptBrief & { sectionCount: number },
+): Promise<Outline> {
+  const response = await anthropic().messages.create({
+    model: SCRIPT_MODEL,
+    max_tokens: 4000,
+    thinking: { type: 'adaptive' },
+    output_config: { effort: 'high', format: { type: 'json_schema', schema: OUTLINE_SCHEMA } },
+    system: OUTLINE_SYSTEM,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          `ช่อง: ${brief.channelName}`,
+          brief.niche ? `แนวเนื้อหา: ${brief.niche}` : null,
+          `หัวข้อ: ${brief.title}`,
+          brief.angle ? `มุมที่อยากเล่า: ${brief.angle}` : null,
+          `แบ่งเป็น ${brief.sectionCount} ท่อน`,
+          brief.recentTitles.length > 0
+            ? `เคยทำไปแล้ว (ห้ามซ้ำ):\n${brief.recentTitles.map((t) => `- ${t}`).join('\n')}`
+            : null,
+        ]
+          .filter(Boolean)
+          .join('\n'),
+      },
+    ],
+  })
+
+  const block = response.content.find((part) => part.type === 'text')
+  if (!block || block.type !== 'text') throw new Error('โมเดลไม่ได้ตอบเป็นข้อความ')
+
+  return JSON.parse(block.text) as Outline
+}
+
+const SECTION_SYSTEM = `คุณเขียนบทพูดหนึ่งท่อนของคลิป YouTube ยาวภาษาไทย
+
+เขียนเฉพาะบทพูดของท่อนนี้ ไม่ต้องเกริ่นว่ากำลังจะเข้าท่อนอะไร
+ไม่ต้องทวนสิ่งที่ท่อนก่อนหน้าเล่าไปแล้ว และไม่ต้องสรุปตอนจบท่อน
+เพราะคนดูฟังต่อเนื่อง การทวนทุกท่อนทำให้คลิปยาวเกินจำเป็นและน่าเบื่อ
+
+เขียนต่อจากประโยคสุดท้ายของท่อนก่อนหน้าให้ลื่น เหมือนคนเดียวกันพูดต่อ`
+
+/**
+ * เขียนทีละท่อน
+ *
+ * ให้ดูโครงทั้งหมดแต่เขียนแค่ท่อนเดียว โมเดลจะได้รู้ว่าอะไรอยู่ท่อนอื่นแล้ว
+ * ไม่ต้องเล่าซ้ำ — จุดนี้คือเหตุผลหลักที่แบ่งท่อนแล้วได้ผลดีกว่าเขียนรวดเดียว
+ */
+export async function generateSection(input: {
+  outline: Outline
+  index: number
+  channelName: string
+  niche: string | null
+  targetChars: number
+  /** ท้ายท่อนก่อนหน้า ~300 ตัวอักษร ใช้ต่อประโยคให้ลื่น */
+  previousTail: string | null
+}): Promise<string> {
+  const section = input.outline.sections[input.index]
+
+  const response = await anthropic().messages.create({
+    model: SCRIPT_MODEL,
+    max_tokens: 8000,
+    thinking: { type: 'adaptive' },
+    output_config: { effort: 'high' },
+    system: SECTION_SYSTEM,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          `ช่อง: ${input.channelName}`,
+          input.niche ? `แนวเนื้อหา: ${input.niche}` : null,
+          `คลิปเรื่อง: ${input.outline.title}`,
+          `ดูจบแล้วต้องทำได้: ${input.outline.promise}`,
+          '',
+          'โครงทั้งคลิป:',
+          ...input.outline.sections.map(
+            (s, i) => `${i + 1}. ${s.heading} — ${s.covers}${i === input.index ? '  ← เขียนท่อนนี้' : ''}`,
+          ),
+          '',
+          `ความยาวท่อนนี้: ~${input.targetChars} ตัวอักษร`,
+          input.previousTail
+            ? `\nท้ายท่อนก่อนหน้า (เขียนต่อให้ลื่น):\n"...${input.previousTail}"`
+            : '\nนี่คือท่อนแรก — เปิดเรื่องด้วยประเด็นที่คนดูสนใจภายในสองประโยคแรก',
+        ]
+          .filter(Boolean)
+          .join('\n'),
+      },
+    ],
+  })
+
+  const block = response.content.find((part) => part.type === 'text')
+  if (!block || block.type !== 'text') throw new Error('โมเดลไม่ได้ตอบเป็นข้อความ')
+
+  if (!section) throw new Error(`ไม่มีท่อนที่ ${input.index} ในโครง`)
+
+  return block.text.trim()
 }

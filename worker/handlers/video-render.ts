@@ -12,7 +12,8 @@ import { creditBlock, downloadPhoto, pickPhoto, searchPhotos, type PexelsPhoto }
 import { buildRenderPlan } from '@/lib/render-plan'
 import { splitIntoScenes, type Scene } from '@/lib/scenes'
 import { formatSpec, formatWarning, minPhotoSize } from '@/lib/formats'
-import { buildDescription, ctaWarning } from '@/lib/description'
+import { buildDescription, chapterBlock, ctaWarning } from '@/lib/description'
+import { chapterMarks, sectionDurationsFromScenes } from '@/lib/outline'
 import { buildThumbnailAss, buildThumbnailCommand, thumbnailLines } from '@/lib/thumbnail'
 import { toSrt } from '@/lib/subtitles'
 import { synthesize } from '@/lib/tts'
@@ -71,7 +72,7 @@ export async function videoRender(
 
   const { data: script } = await db
     .from('scripts')
-    .select('id, body, title')
+    .select('id, body, title, originality')
     .eq('id', payload.script_id)
     .single()
 
@@ -146,6 +147,7 @@ export async function videoRender(
     // 2–3 บรรทัดแรก ลิงก์ที่อยู่ท้ายเท่ากับไม่มีลิงก์
     const description = buildDescription({
       cta: channel?.cta_template ?? null,
+      chapters: chapterText(script.originality, scenes, audio.durations),
       body: video.description ?? null,
       credits: creditBlock(images.credits),
     })
@@ -352,4 +354,43 @@ async function makeThumbnail(
     console.warn(`[video_render] ${video.id} ทำปกไม่สำเร็จ (คลิปยังใช้ได้):`, error)
     return null
   }
+}
+
+/**
+ * หมุดเวลาแยกบท จากหัวข้อย่อยที่ตอนเขียนสคริปต์วางไว้
+ *
+ * มีเฉพาะคลิปที่เขียนแบบวางโครงก่อน (format 'feature') — คลิปที่เขียนรวดเดียวไม่มีท่อน
+ * ให้อ้างอิง จึงไม่มีหมุด ซึ่งถูกแล้ว: หมุดที่เดาเอาแย่กว่าไม่มีหมุด
+ *
+ * ล้มตรงนี้ต้องไม่ทำให้คลิปที่เรนเดอร์เสร็จแล้วพัง — คำอธิบายที่ขาดหมุดยังใช้ได้
+ * แต่คลิปที่หายไปเพราะ JSON รูปแบบไม่ตรงคือเสียทั้งค่าเรนเดอร์
+ */
+function chapterText(
+  originality: unknown,
+  scenes: Scene[],
+  durations: number[],
+): string | null {
+  const raw = (originality as { chapters?: unknown } | null)?.chapters
+  if (!Array.isArray(raw) || raw.length === 0) return null
+
+  const chapters = raw.filter(
+    (item): item is { heading: string; chars: number } =>
+      typeof item === 'object' &&
+      item !== null &&
+      typeof (item as { heading?: unknown }).heading === 'string' &&
+      typeof (item as { chars?: unknown }).chars === 'number',
+  )
+
+  if (chapters.length !== raw.length) {
+    console.warn('[video_render] ข้อมูลหัวข้อย่อยไม่ครบ ข้ามการทำหมุดเวลา')
+    return null
+  }
+
+  const seconds = sectionDurationsFromScenes(
+    chapters.map((c) => c.chars),
+    scenes.map((scene) => scene.charCount),
+    durations,
+  )
+
+  return chapterBlock(chapterMarks(chapters.map((c) => c.heading), seconds))
 }

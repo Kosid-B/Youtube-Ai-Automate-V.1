@@ -1,7 +1,15 @@
 import type { WorkerClient } from '../supabase'
 import type { JobPayloads } from '@/lib/jobs'
-import { generateScript } from '@/lib/anthropic'
+import { generateOutline, generateScript, generateSection } from '@/lib/anthropic'
 import { buildGuidance, guidanceText } from '@/lib/content-feedback'
+import { formatSpec } from '@/lib/formats'
+import { THAI_CHARS_PER_SECOND } from '@/lib/scenes'
+import {
+  joinSections,
+  outlineProblems,
+  plannedSections,
+  sectionSeconds,
+} from '@/lib/outline'
 import { track } from '@/lib/analytics'
 import { checkOriginality, SIMILARITY_BLOCK } from '@/lib/originality'
 import type { Json } from '@/lib/database.types'
@@ -76,6 +84,31 @@ export async function scriptGenerate(
     console.warn('[script_generate] ดึงผลงานที่ผ่านมาไม่ได้ เขียนต่อโดยไม่ใช้:', error)
   }
 
+  const spec = formatSpec(script.format)
+
+  /**
+   * คลิปยาวพิเศษเขียนทีละท่อน ไม่ใช่รวดเดียว
+   *
+   * ขอ 40,000+ ตัวอักษรในครั้งเดียว โมเดลจะเริ่มวนซ้ำและหลุดประเด็นกลางทาง
+   * วางโครงก่อนแล้วให้โฟกัสทีละท่อนได้เนื้อหาที่ไม่ทับกันและตรงประเด็นกว่า
+   */
+  if (spec.useOutline) {
+    const generated = await writeByOutline({
+      channelName: channel.name,
+      niche: channel.niche,
+      title: script.title,
+      angle: null,
+      recentTitles: (recent ?? []).map((row) => row.title),
+      brief: payload.brief,
+      performanceNote,
+      format: script.format,
+      targetSeconds: spec.targetSeconds,
+    })
+
+    await finish(db, script, generated, performanceNote)
+    return
+  }
+
   const generated = await generateScript({
     channelName: channel.name,
     niche: channel.niche,
@@ -87,6 +120,79 @@ export async function scriptGenerate(
     format: script.format,
   })
 
+  await finish(db, script, generated, performanceNote)
+}
+
+/**
+ * วางโครง → เขียนทีละท่อน → ต่อกัน
+ *
+ * เขียนทีละท่อนโดยส่งท้ายท่อนก่อนหน้าไปด้วย เพื่อให้ต่อประโยคได้ลื่นเหมือนคนเดียวพูดต่อ
+ * ท่อนไหนล้มกลางทางจะทำให้ทั้งงานล้ม ซึ่งถูกแล้ว — สคริปต์ที่ขาดท่อนกลางใช้ไม่ได้อยู่ดี
+ * และงานนี้ retry ได้ (เสียเงินซ้ำ แต่ดีกว่าได้ของพัง)
+ */
+async function writeByOutline(
+  brief: Parameters<typeof generateScript>[0] & { targetSeconds: number },
+): Promise<Generated> {
+  const count = plannedSections(brief.targetSeconds)
+  const outline = await generateOutline({ ...brief, sectionCount: count })
+
+  // ตรวจโครงก่อนลงมือ — เขียนครบทุกท่อนแล้วค่อยพบว่าโครงพังคือเสียเงินทั้งเรื่อง
+  const problems = outlineProblems(outline)
+  if (problems.length > 0) {
+    throw new Error(`โครงคลิปใช้ไม่ได้: ${problems.join(' · ')}`)
+  }
+
+  const perSection = sectionSeconds(brief.targetSeconds, outline.sections.length)
+  const charsPerSection = Math.round(perSection * THAI_CHARS_PER_SECOND)
+
+  const sections: string[] = []
+
+  for (let i = 0; i < outline.sections.length; i += 1) {
+    const previous = sections[sections.length - 1]
+
+    const text = await generateSection({
+      outline,
+      index: i,
+      channelName: brief.channelName,
+      niche: brief.niche,
+      targetChars: charsPerSection,
+      // ท้ายท่อนก่อนหน้าพอให้ต่อประโยคได้ ไม่ต้องส่งทั้งท่อน — เปลืองโทเคนโดยไม่ช่วยอะไร
+      previousTail: previous ? previous.slice(-300) : null,
+    })
+
+    sections.push(text)
+    console.log(`[script_generate] ท่อน ${i + 1}/${outline.sections.length} เสร็จ (${text.length} ตัวอักษร)`)
+  }
+
+  return {
+    title: outline.title,
+    body: joinSections(sections),
+    angle: outline.promise,
+    sources: [],
+    // หัวข้อย่อย + ความยาวจริงที่เขียนได้ เก็บไว้ทำหมุดเวลาตอนประกอบคลิป
+    // ต้องเป็นความยาว "หลัง trim" ให้ตรงกับที่ joinSections เอาไปต่อ ไม่งั้นหมุดเลื่อน
+    chapters: outline.sections.map((section, i) => ({
+      heading: section.heading,
+      chars: sections[i].trim().length,
+    })),
+  }
+}
+
+type Generated = {
+  title: string
+  body: string
+  angle: string
+  sources: string[]
+  /** หัวข้อย่อย + จำนวนตัวอักษรของแต่ละท่อน — มีเฉพาะคลิปที่เขียนตามโครง */
+  chapters?: { heading: string; chars: number }[]
+}
+
+async function finish(
+  db: WorkerClient,
+  script: { id: string; org_id: string },
+  generated: Generated,
+  performanceNote: string | null,
+): Promise<void> {
   // ตรวจความซ้ำตั้งแต่ตอนนี้ เพื่อให้ผู้ใช้เห็นปัญหาก่อนจะไปกดสั่ง render
   const { data: others } = await db
     .from('scripts')
@@ -110,7 +216,12 @@ export async function scriptGenerate(
     .update({
       title: generated.title,
       body: generated.body,
-      originality: { ...report, sources: generated.sources, angle: generated.angle } as Json,
+      originality: {
+        ...report,
+        sources: generated.sources,
+        angle: generated.angle,
+        ...(generated.chapters ? { chapters: generated.chapters } : {}),
+      } as Json,
       // 'draft' = เขียนเสร็จแล้วรอคนตรวจ · จะเป็น 'ready' เมื่อผ่านด่าน originality ตอนสั่ง render
       status: report.similarity >= SIMILARITY_BLOCK ? 'blocked' : 'draft',
     })

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { InsufficientCreditsError } from '@/lib/credits'
 import { enqueueJob } from '@/lib/jobs'
+import { FORMATS } from '@/lib/formats'
 import type { VideoFormat } from '@/lib/database.types'
 
 /**
@@ -38,7 +39,12 @@ export async function POST(request: Request) {
   const { channel_id: channelId, idea_id: ideaId, brief } = body
 
   // ค่าที่ผู้ใช้ส่งมาต้องอยู่ในชุดที่รู้จัก ไม่ใช่ยัดอะไรก็ได้ลงคอลัมน์ enum
-  const format: VideoFormat = body.format === 'short' ? 'short' : 'long'
+  // ตรวจกับ FORMATS โดยตรง เพิ่มรูปแบบใหม่ทีหลังจะได้ไม่ต้องมาแก้ตรงนี้ซ้ำ
+  // (เขียนเป็น body.format === 'short' ? ... : 'long' ไว้ รูปแบบที่สามจะถูกกลืนเป็น 'long' เงียบ ๆ)
+  const format: VideoFormat =
+    typeof body.format === 'string' && body.format in FORMATS
+      ? (body.format as VideoFormat)
+      : 'long'
 
   if (!channelId) {
     return NextResponse.json({ error: 'ต้องระบุ channel_id' }, { status: 400 })

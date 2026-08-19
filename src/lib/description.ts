@@ -17,6 +17,8 @@ export const MAX_DESCRIPTION_CHARS = 5000
 export type DescriptionParts = {
   /** ข้อความชวนให้ทำอะไรต่อ + ลิงก์ — ผู้ใช้เขียนเอง */
   cta: string | null
+  /** หมุดเวลาแยกบท (คลิปยาวเท่านั้น) */
+  chapters: string | null
   /** เนื้อหาสรุปของคลิป */
   body: string | null
   /** เครดิตช่างภาพ Pexels — สัญญาไว้ตอนขอ API key ว่าจะใส่ทุกคลิป */
@@ -24,7 +26,7 @@ export type DescriptionParts = {
 }
 
 export function buildDescription(parts: DescriptionParts): string {
-  const blocks = [parts.cta, parts.body, parts.credits]
+  const blocks = [parts.cta, parts.chapters, parts.body, parts.credits]
     .map((block) => block?.trim())
     .filter((block): block is string => Boolean(block))
 
@@ -54,4 +56,22 @@ export function ctaWarning(cta: string | null): string | null {
   }
 
   return null
+}
+
+/**
+ * บล็อกหมุดเวลาสำหรับคำอธิบายใต้คลิป
+ *
+ * YouTube จะแปลงเป็นบทในแถบเลื่อนให้ก็ต่อเมื่อ: หมุดแรกเป็น 0:00 · มีอย่างน้อย 3 หมุด ·
+ * แต่ละบทยาวอย่างน้อย 10 วินาที · เรียงจากน้อยไปมาก
+ * ไม่ครบเงื่อนไข YouTube ไม่แจ้งอะไรเลย — มันแค่แสดงเป็นข้อความธรรมดาแล้วเงียบไป
+ * จึงคืน null ไปเลยดีกว่าใส่หมุดที่ไม่ทำงานให้รกคำอธิบาย
+ *
+ * ตรวจแค่สองข้อแรกตรงนี้ อีกสองข้อรับประกันมาจากต้นทางแล้ว: ท่อนหนึ่งยาวอย่างน้อย
+ * 4 นาที (SECTION_SECONDS.min) เวลาจึงเพิ่มขึ้นเสมอและห่างเกิน 10 วินาทีเสมอ
+ */
+export function chapterBlock(marks: { time: string; heading: string }[]): string | null {
+  if (marks.length < 3) return null
+  if (marks[0].time !== '0:00') return null
+
+  return marks.map((mark) => `${mark.time} ${mark.heading}`).join('\n')
 }

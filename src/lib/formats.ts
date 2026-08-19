@@ -10,8 +10,10 @@
  * ช่วงที่ทำงานได้ดีที่สุดคือ 35–58 วินาที จึงตั้งเป้าไว้ 50 วินาที
  */
 import type { SplitOptions } from '@/lib/scenes'
+import type { VideoFormat } from '@/lib/database.types'
 
-export type VideoFormat = 'long' | 'short'
+// นิยามอยู่ที่ database.types.ts ที่เดียว เพราะต้องตรงกับ enum ในฐานข้อมูล
+export type { VideoFormat }
 
 export type FormatSpec = {
   label: string
@@ -29,6 +31,11 @@ export type FormatSpec = {
   crossfadeSeconds: number
   /** ขนาดปกคลิป — ยาวใช้ 16:9 ตามช่องปกของ YouTube · สั้นใช้แนวตั้งให้ตรงกับที่ผู้ชมเห็น */
   thumbnail: { width: number; height: number }
+  /**
+   * เขียนโดยวางโครงก่อนแล้วเขียนทีละท่อน แทนการเขียนรวดเดียว
+   * จำเป็นเมื่อยาวเกินราว 15 นาที — ขอรวดเดียวโมเดลจะเริ่มวนซ้ำและหลุดประเด็น
+   */
+  useOutline: boolean
 }
 
 export const FORMATS: Record<VideoFormat, FormatSpec> = {
@@ -44,6 +51,7 @@ export const FORMATS: Record<VideoFormat, FormatSpec> = {
     subtitleMarginV: 48,
     crossfadeSeconds: 0.5,
     thumbnail: { width: 1280, height: 720 },
+    useOutline: false,
   },
   short: {
     label: 'คลิปสั้น (9:16)',
@@ -60,6 +68,23 @@ export const FORMATS: Record<VideoFormat, FormatSpec> = {
     // ตัดเร็วกว่าเพื่อให้จังหวะกระชับ เฟดยาวในคลิป 50 วินาทีกินเวลาไปเปล่า ๆ
     crossfadeSeconds: 0.25,
     thumbnail: { width: 1080, height: 1920 },
+    useOutline: false,
+  },
+
+  feature: {
+    label: 'คลิปยาวพิเศษ (16:9)',
+    canvas: { width: 1920, height: 1080, fps: 30 },
+    orientation: 'landscape',
+    scenes: { targetChars: 210, maxChars: 320 },
+    // 45 นาที ไม่ใช่ 60 — เวลาเรนเดอร์โตตามความยาวตรง ๆ และเพดาน worker คือ 20 นาที
+    // (วัดจริง: เรนเดอร์ใช้เวลาราวครึ่งหนึ่งของความยาวคลิปที่ 640x360 · 1080p ช้ากว่านั้นมาก)
+    targetSeconds: 2700,
+    maxSeconds: 4200,
+    subtitleFontSize: 22,
+    subtitleMarginV: 48,
+    crossfadeSeconds: 0.5,
+    thumbnail: { width: 1280, height: 720 },
+    useOutline: true,
   },
 }
 
