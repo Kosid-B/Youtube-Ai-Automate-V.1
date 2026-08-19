@@ -121,3 +121,28 @@ export function estimateClipCost(input: EstimateInput): CostEstimate {
 function round2(n: number): number {
   return Math.round(n * 100) / 100
 }
+
+/** เครดิตที่ใช้ต่อคลิปหนึ่งเรื่อง = script 1 + render 5 + upload 1 (ดู JOB_COST) */
+export const CREDITS_PER_CLIP = 7
+
+/**
+ * แปลงเครดิตที่ใช้ไปเป็นเงินบาทโดยประมาณ
+ *
+ * ⚠️ เป็นค่าประมาณ ไม่ใช่ยอดบิลจริง และตั้งใจให้เห็นชัดว่าประมาณ
+ * ระบบยังไม่ได้บันทึก token ที่โมเดลใช้จริงหรือจำนวนตัวอักษรที่ส่งเข้า TTS จริง
+ * ตัวเลขนี้จึงเป็น "จำนวนคลิป × ต้นทุนของคลิปมาตรฐาน" — คลิป 3 นาทีกับ 10 นาที
+ * ถูกนับเท่ากันทั้งที่ต้นทุนต่างกันหลายเท่า
+ *
+ * ใช้ดูแนวโน้มว่าเดือนนี้ใช้มากกว่าเดือนก่อนไหมได้ ห้ามใช้กระทบยอดกับบิลจริง
+ */
+export function estimateSpendThb(
+  creditsUsed: number,
+  clip: EstimateInput = {
+    scriptChars: 6700,
+    model: 'claude-opus-5',
+    tts: 'google-chirp3-hd',
+  },
+): number {
+  const perClip = estimateClipCost(clip)
+  return Math.round((creditsUsed / CREDITS_PER_CLIP) * perClip.totalThb)
+}

@@ -3,7 +3,11 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { Section, type Row } from '@/components/section'
 import { AutoRefresh } from '@/components/auto-refresh'
-import { jobView, videoStage } from '@/lib/pipeline'
+import { formatRelative, jobLabel, jobView, videoStage } from '@/lib/pipeline'
+import { KpiStrip, type Kpi } from '@/components/kpi-strip'
+import { Sparkline } from '@/components/sparkline'
+import { RequeueButton } from '@/components/requeue-button'
+import { estimateSpendThb } from '@/lib/costs'
 
 export const dynamic = 'force-dynamic'
 
@@ -36,11 +40,10 @@ export default async function Page() {
   if (!user) redirect('/login')
 
   // ยังไม่มีองค์กร = ผู้ใช้ใหม่ พาไปเปิดพื้นที่ทำงานก่อน
-  const { count: orgCount } = await supabase
-    .from('org_members')
-    .select('org_id', { count: 'exact', head: true })
+  const { data: memberships } = await supabase.from('org_members').select('org_id').limit(1)
+  const orgId = memberships?.[0]?.org_id
 
-  if (!orgCount) redirect('/onboarding')
+  if (!orgId) redirect('/onboarding')
 
   // RLS คัดให้เหลือเฉพาะองค์กรที่ผู้ใช้เป็นสมาชิกอยู่แล้ว
   const [{ data: videos }, { data: jobs }] = await Promise.all([
@@ -57,7 +60,56 @@ export default async function Page() {
       .limit(60),
   ])
 
+  /**
+   * ตัวเลขสรุปมาจาก rpc ไม่ใช่ query ตรง ๆ เพราะ youtube_quota ปิด RLS ไว้สนิท
+   * (ไม่มี policy เลย = client อ่านไม่ได้โดยตั้งใจ) และรวมเป็นรอบเดียวโหลดเร็วกว่า
+   */
+  const [{ data: summaryRows }, { data: stuckRows }, { data: quotaRows }, { data: dailyRows }] =
+    await Promise.all([
+      supabase.rpc('pipeline_summary', { p_org_id: orgId }),
+      supabase.rpc('pipeline_stuck_jobs', { p_org_id: orgId }),
+      supabase.rpc('quota_remaining_clips', { p_org_id: orgId }),
+      supabase.rpc('pipeline_daily', { p_org_id: orgId, p_days: 30 }),
+    ])
+
+  const stats = summaryRows?.[0]
+  const quota = quotaRows?.[0]
+  const stuck = stuckRows ?? []
+  const daily = dailyRows ?? []
+
   const now = new Date()
+
+  const kpis: Kpi[] = stats
+    ? [
+        {
+          label: 'ต้องแตะเอง',
+          value: stats.stuck_count === 0 ? 'ไม่มี' : String(stats.stuck_count),
+          context: stats.stuck_count === 0 ? 'ระบบเดินเองได้ทั้งหมด' : 'ระบบไปต่อเองไม่ได้',
+          alert: stats.stuck_count > 0,
+        },
+        {
+          label: 'ใช้ไปเดือนนี้',
+          value: `฿${estimateSpendThb(stats.credits_used_month).toLocaleString('th-TH')}`,
+          context: `${stats.credits_used_month} เครดิต · ประมาณจากคลิปมาตรฐาน`,
+          estimated: true,
+        },
+        {
+          label: 'ผลิตเดือนนี้',
+          value: `${stats.clips_done_month} / ${stats.monthly_target}`,
+          context: `เหลืออีก ${Math.max(stats.monthly_target - stats.clips_done_month, 0)} คลิปถึงเป้า`,
+          progress: stats.clips_done_month / stats.monthly_target,
+        },
+        {
+          label: 'อัปได้วันนี้',
+          value: quota ? `${quota.clips_left} คลิป` : '—',
+          context: quota
+            ? quota.is_shared
+              ? 'ความจุคลังกลาง ใช้ร่วมกับช่องอื่น'
+              : 'โควตาของช่องคุณเอง'
+            : 'ยังไม่ได้ตั้งค่าคลังโควตา',
+        },
+      ]
+    : []
 
   const videoRows = (videos ?? []).map((video) => {
     const stage = videoStage(video.status)
@@ -148,6 +200,34 @@ export default async function Page() {
         </Link>
       </header>
 
+      {kpis.length > 0 && <KpiStrip items={kpis} />}
+
+      {/* งานที่ระบบไปต่อเองไม่ได้ — อยู่บนสุดเพราะเป็นสิ่งเดียวที่ต้องลงมือทำ */}
+      {stuck.length > 0 && (
+        <section className="mt-8">
+          <h2 className="text-sm font-semibold">ต้องแตะเอง</h2>
+          <ul className="mt-3 divide-y divide-line overflow-hidden rounded-xl border border-line bg-surface">
+            {stuck.map((job) => (
+              <li key={job.job_id} className="px-4 py-3.5 sm:px-5">
+                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                  <span className="font-medium" style={{ color: 'var(--color-block)' }}>
+                    {job.reason}
+                  </span>
+                  <span className="text-sm text-ink-muted">
+                    {jobLabel(job.kind as Parameters<typeof jobLabel>[0])} ·{' '}
+                    {formatRelative(new Date(job.stuck_since), now)}
+                  </span>
+                </div>
+                {job.last_error && (
+                  <p className="mt-1 text-sm leading-snug text-ink-muted">{job.last_error}</p>
+                )}
+                {job.can_requeue && <RequeueButton jobId={job.job_id} />}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {/* หมวดนี้โผล่เฉพาะตอนมีของจริง หัวข้อว่างเปล่าไม่ได้ช่วยอะไรนอกจากกินที่ */}
       {attention.length > 0 && (
         <Section
@@ -170,6 +250,21 @@ export default async function Page() {
         rows={published}
         emptyText="ยังไม่มีคลิปที่เผยแพร่ คลิปแรกจะมาโผล่ตรงนี้"
       />
+
+      {/* แนวโน้มอยู่ล่างสุด — เป็นบริบท ไม่ใช่สิ่งที่ต้องเห็นก่อนตัดสินใจอะไร */}
+      {daily.length > 0 && stats && (
+        <div className="mt-8 grid gap-3 sm:grid-cols-2">
+          <Sparkline
+            label="คลิปเสร็จต่อวัน (30 วัน)"
+            values={daily.map((d) => d.clips_done)}
+            target={stats.monthly_target / 30}
+          />
+          <Sparkline
+            label="เครดิตที่ใช้ต่อวัน (30 วัน)"
+            values={daily.map((d) => d.credits_used)}
+          />
+        </div>
+      )}
     </main>
   )
 }

@@ -19,11 +19,34 @@ export type JobStatus = 'queued' | 'claimed' | 'done' | 'failed' | 'dead'
 
 export type JobKind = 'script_generate' | 'video_render' | 'youtube_upload' | 'metrics_sync'
 
+export type ContentFeaturesRow = {
+  id: string
+  org_id: string
+  video_id: string
+  script_chars: number | null
+  scene_count: number | null
+  duration_seconds: number | null
+  image_count: number | null
+  title_chars: number | null
+  title_has_number: boolean | null
+  title_has_question: boolean | null
+  published_dow: number | null
+  published_hour: number | null
+  hook_type: string | null
+  tone: string | null
+  thumbnail_style: string | null
+  cta_type: string | null
+  topic: string | null
+  labeled_by: string | null
+  captured_at: string
+}
+
 export type OrganizationRow = {
   id: string
   name: string
   slug: string
   credits: number
+  monthly_target: number
   created_at: string
 }
 
@@ -169,6 +192,7 @@ export type Database = {
       credit_ledger: TableShape<CreditLedgerRow>
       youtube_projects: TableShape<YoutubeProjectRow>
       video_assets: TableShape<VideoAssetRow>
+      content_features: TableShape<ContentFeaturesRow>
     }
     Views: Record<string, never>
     Functions: {
@@ -225,6 +249,60 @@ export type Database = {
       quota_resets_at: {
         Args: Record<string, never>
         Returns: string
+      }
+      capture_content_features: {
+        Args: { p_video_id: string }
+        Returns: ContentFeaturesRow
+      }
+      content_feature_summary: {
+        Args: { p_org_id: string; p_feature: string }
+        Returns: {
+          feature_value: string
+          sample_size: number
+          median_views: number | null
+          median_avd_ratio: number | null
+          median_ctr: number | null
+        }[]
+      }
+      pipeline_summary: {
+        Args: { p_org_id: string }
+        Returns: {
+          stuck_count: number
+          credits_used_month: number
+          clips_done_month: number
+          monthly_target: number
+          queued_count: number
+          running_count: number
+          done_today: number
+        }[]
+      }
+      pipeline_stuck_jobs: {
+        Args: { p_org_id: string }
+        Returns: {
+          job_id: string
+          kind: string
+          reason: string
+          stuck_since: string
+          last_error: string | null
+          can_requeue: boolean
+        }[]
+      }
+      pipeline_daily: {
+        Args: { p_org_id: string; p_days?: number }
+        Returns: { day: string; clips_done: number; credits_used: number }[]
+      }
+      quota_remaining_clips: {
+        Args: { p_org_id: string; p_units_per_clip?: number }
+        Returns: {
+          clips_left: number
+          units_left: number
+          is_shared: boolean
+          resets_at: string
+        }[]
+      }
+      requeue_stuck_job: {
+        Args: { p_job_id: string }
+        Returns: JobRow
       }
     }
     Enums: {
