@@ -2,7 +2,8 @@ import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { NextConfig } from 'next'
 
-// repo แม่มี lockfile ของตัวเอง ถ้าไม่ปักหมุดไว้ next จะเดา workspace root ผิด
+// ปักหมุด root ไว้ให้ชัด — next เดา workspace root จาก lockfile ที่หาเจอ
+// ซึ่งเดาผิดได้เมื่อมี lockfile อยู่ชั้นบน (เคยเป็นแบบนั้นตอนอยู่ใน repo รวม)
 const projectRoot = dirname(fileURLToPath(import.meta.url))
 
 const nextConfig: NextConfig = {
