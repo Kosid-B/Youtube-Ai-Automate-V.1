@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { InsufficientCreditsError } from '@/lib/credits'
 import { enqueueJob } from '@/lib/jobs'
+import type { VideoFormat } from '@/lib/database.types'
 
 /**
  * สร้างสคริปต์ใหม่เข้าคิว
@@ -21,7 +22,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'ต้องเข้าสู่ระบบก่อน' }, { status: 401 })
   }
 
-  let body: { channel_id?: string; idea_id?: string; title?: string; brief?: string }
+  let body: {
+    channel_id?: string
+    idea_id?: string
+    title?: string
+    brief?: string
+    format?: string
+  }
   try {
     body = await request.json()
   } catch {
@@ -29,6 +36,9 @@ export async function POST(request: Request) {
   }
 
   const { channel_id: channelId, idea_id: ideaId, brief } = body
+
+  // ค่าที่ผู้ใช้ส่งมาต้องอยู่ในชุดที่รู้จัก ไม่ใช่ยัดอะไรก็ได้ลงคอลัมน์ enum
+  const format: VideoFormat = body.format === 'short' ? 'short' : 'long'
 
   if (!channelId) {
     return NextResponse.json({ error: 'ต้องระบุ channel_id' }, { status: 400 })
@@ -75,6 +85,7 @@ export async function POST(request: Request) {
       idea_id: ideaId ?? null,
       title,
       status: 'draft',
+      format,
     })
     .select('id')
     .single()

@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { JOB_COST } from '@/lib/credits'
+import { FORMATS, type VideoFormat } from '@/lib/formats'
 
 type Channel = { id: string; name: string }
 
@@ -10,6 +11,7 @@ export function NewScriptForm({ channels, credits }: { channels: Channel[]; cred
   const router = useRouter()
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [format, setFormat] = useState<VideoFormat>('long')
 
   const cost = JOB_COST.script_generate
   const enough = credits >= cost
@@ -27,6 +29,7 @@ export function NewScriptForm({ channels, credits }: { channels: Channel[]; cred
         channel_id: form.get('channel_id'),
         title: String(form.get('title') ?? '').trim(),
         brief: String(form.get('brief') ?? '').trim() || undefined,
+        format,
       }),
     })
 
@@ -44,6 +47,39 @@ export function NewScriptForm({ channels, credits }: { channels: Channel[]; cred
 
   return (
     <form onSubmit={submit} className="mt-8 space-y-5">
+      {/*
+        Hick's Law: สองตัวเลือก แสดงเป็นปุ่มให้เห็นพร้อมกันเลย เร็วกว่า dropdown ที่ต้องกดเปิดก่อน
+        Law of Similarity: ปุ่มที่เลือกอยู่ต่างจากอีกปุ่มชัดเจน ไม่ต้องเพ่ง
+      */}
+      <fieldset>
+        <legend className="text-sm text-ink-muted">รูปแบบคลิป</legend>
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          {(Object.keys(FORMATS) as VideoFormat[]).map((key) => {
+            const spec = FORMATS[key]
+            const active = format === key
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setFormat(key)}
+                aria-pressed={active}
+                className={`rounded-lg border px-3 py-2.5 text-left transition ${
+                  active ? 'border-ink bg-surface-2' : 'border-line hover:border-ink-muted'
+                }`}
+              >
+                <span className="block text-sm font-medium">{spec.label}</span>
+                {/* บอกความยาวจริงไปเลย ผู้ใช้จะได้ไม่ต้องเดาว่า "สั้น" คือแค่ไหน */}
+                <span className="mt-0.5 block text-xs text-ink-muted">
+                  {key === 'short'
+                    ? `~${spec.targetSeconds} วินาที · YouTube Shorts`
+                    : `~${Math.round(spec.targetSeconds / 60)} นาที`}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      </fieldset>
+
       {channels.length > 1 && (
         <div>
           <label htmlFor="channel_id" className="block text-sm font-medium">

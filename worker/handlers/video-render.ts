@@ -11,6 +11,7 @@ import { buildFfmpegCommand } from '@/lib/ffmpeg'
 import { creditBlock, downloadPhoto, pickPhoto, searchPhotos, type PexelsPhoto } from '@/lib/pexels'
 import { buildRenderPlan } from '@/lib/render-plan'
 import { splitIntoScenes, type Scene } from '@/lib/scenes'
+import { formatSpec, formatWarning, minPhotoSize } from '@/lib/formats'
 import { toSrt } from '@/lib/subtitles'
 import { synthesize } from '@/lib/tts'
 import { track } from '@/lib/analytics'
@@ -55,7 +56,7 @@ export async function videoRender(
 ): Promise<void> {
   const { data: video } = await db
     .from('videos')
-    .select('id, org_id, channel_id, title, storage_path, description')
+    .select('id, org_id, channel_id, title, storage_path, description, format')
     .eq('id', payload.video_id)
     .single()
 
@@ -80,7 +81,9 @@ export async function videoRender(
     .eq('id', video.channel_id)
     .single()
 
-  const scenes = splitIntoScenes(script.body)
+  // รูปแบบกำหนดทุกอย่างพร้อมกัน: ความยาวฉาก แนวภาพ ขนาดเฟรม ขนาดซับ
+  const spec = formatSpec(video.format)
+  const scenes = splitIntoScenes(script.body, spec.scenes)
   if (scenes.length === 0) throw new Error('แบ่งฉากจากสคริปต์ไม่ได้')
 
   await db.from('videos').update({ status: 'rendering' }).eq('id', video.id)
@@ -89,7 +92,10 @@ export async function videoRender(
   const workDir = await mkdtemp(join(tmpdir(), `ytf-${video.id}-`))
 
   try {
-    const images = await collectImages(db, video, scenes, channel?.niche ?? null, workDir)
+    const images = await collectImages(
+      db, video, scenes, channel?.niche ?? null, workDir,
+      spec.orientation, minPhotoSize(video.format),
+    )
     const audio = await collectAudio(scenes, workDir)
 
     const plan = buildRenderPlan({
@@ -97,7 +103,14 @@ export async function videoRender(
       durationsSec: audio.durations,
       imagePaths: images.paths,
       audioPaths: audio.paths,
+      canvas: spec.canvas,
+      crossfadeSeconds: spec.crossfadeSeconds,
     })
+
+    // คลิปสั้นที่ยาวเกิน 3 นาทีจะไม่ถูกนับเป็น Short — เสียเหตุผลเดียวที่ทำคลิปสั้น
+    // ไม่หยุดงาน เพราะไฟล์ยังใช้ได้ แต่ต้องเห็นว่าเกิดขึ้นแล้ว
+    const warning = formatWarning(video.format, plan.totalSeconds)
+    if (warning) console.warn(`[video_render] ${video.id} ⚠️ ${warning}`)
 
     const subtitlePath = join(workDir, 'subtitles.srt')
     await writeFile(subtitlePath, toSrt(plan.subtitles), 'utf8')
@@ -106,6 +119,8 @@ export async function videoRender(
     const { args } = buildFfmpegCommand(plan, {
       subtitlePath,
       outputPath,
+      fontSize: spec.subtitleFontSize,
+      marginV: spec.subtitleMarginV,
       ...subtitleStyle(),
     })
 
@@ -132,6 +147,7 @@ export async function videoRender(
       .eq('id', video.id)
 
     await track('render_completed', video.org_id, {
+      format: video.format,
       scenes: scenes.length,
       seconds: plan.totalSeconds,
       images: images.paths.length,
@@ -162,6 +178,9 @@ async function collectImages(
   scenes: Scene[],
   niche: string | null,
   workDir: string,
+  /** คลิปแนวตั้งต้องขอภาพแนวตั้ง ไม่งั้น crop ทิ้งเกือบทั้งภาพ */
+  orientation: 'landscape' | 'portrait',
+  minSize: { minWidth: number; minHeight: number },
 ): Promise<CollectedImages> {
   // ภาพที่เคยหาไว้แล้วจากรอบก่อน — retry ไม่ต้องเผาโควตา Pexels ซ้ำ
   const { data: existing } = await db
@@ -190,13 +209,16 @@ async function collectImages(
     let photo: PexelsPhoto | null = null
 
     if (!cached) {
-      const { photos } = await searchPhotos(query)
-      photo = pickPhoto(photos, { usedIds })
+      const { photos } = await searchPhotos(query, { orientation })
+      photo = pickPhoto(photos, { usedIds, ...minSize })
 
       if (!photo) {
         // คำค้นเฉพาะเกินไปจนไม่มีภาพผ่านเกณฑ์ — ถอยไปคำกว้างแทนที่จะล้มทั้งงาน
-        const fallback = await searchPhotos(niche?.trim() ? 'business workplace' : 'abstract background')
-        photo = pickPhoto(fallback.photos, { usedIds })
+        const fallback = await searchPhotos(
+          niche?.trim() ? 'business workplace' : 'abstract background',
+          { orientation },
+        )
+        photo = pickPhoto(fallback.photos, { usedIds, ...minSize })
       }
 
       if (!photo) throw new Error(`หาภาพให้ฉาก ${scene.index} ไม่ได้ (คำค้น "${query}")`)

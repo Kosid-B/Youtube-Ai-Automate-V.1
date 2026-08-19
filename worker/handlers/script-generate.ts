@@ -21,7 +21,7 @@ export async function scriptGenerate(
 ): Promise<void> {
   const { data: script, error } = await db
     .from('scripts')
-    .select('id, org_id, channel_id, title, body, status')
+    .select('id, org_id, channel_id, title, body, status, format')
     .eq('id', payload.script_id)
     .single()
 
@@ -84,6 +84,7 @@ export async function scriptGenerate(
     recentTitles: (recent ?? []).map((row) => row.title),
     brief: payload.brief,
     performanceNote,
+    format: script.format,
   })
 
   // ตรวจความซ้ำตั้งแต่ตอนนี้ เพื่อให้ผู้ใช้เห็นปัญหาก่อนจะไปกดสั่ง render

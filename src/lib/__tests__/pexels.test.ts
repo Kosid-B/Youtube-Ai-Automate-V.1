@@ -153,3 +153,22 @@ describe('downloadUrl', () => {
     expect(downloadUrl(p)).toContain('original')
   })
 })
+
+describe('pickPhoto — เกณฑ์ขนาดสำหรับคลิปแนวตั้ง', () => {
+  function portrait(id: number, width: number, height: number): PexelsPhoto {
+    return photo({ id, width, height })
+  }
+
+  it('เกณฑ์ความสูงต้องคัดภาพเตี้ยเกินออก แม้จะกว้างพอ', () => {
+    const chosen = pickPhoto([portrait(1, 1200, 800), portrait(2, 1200, 2000)], {
+      minWidth: 1080,
+      minHeight: 1920,
+    })
+    expect(chosen?.id).toBe(2)
+  })
+
+  it('ภาพแนวตั้ง 1080x1920 ต้องผ่านเกณฑ์ของคลิปสั้น (เดิมโดนคัดทิ้งเพราะกว้างไม่ถึง 1920)', () => {
+    const chosen = pickPhoto([portrait(9, 1080, 1920)], { minWidth: 1080, minHeight: 1920 })
+    expect(chosen?.id).toBe(9)
+  })
+})

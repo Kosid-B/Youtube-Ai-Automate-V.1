@@ -41,6 +41,8 @@ export type ContentFeaturesRow = {
   captured_at: string
 }
 
+export type VideoFormat = 'long' | 'short'
+
 export type OrganizationRow = {
   id: string
   name: string
@@ -89,6 +91,7 @@ export type ScriptRow = {
   body: string | null
   status: ScriptStatus
   originality: Json | null
+  format: VideoFormat
   created_at: string
   updated_at: string
 }
@@ -106,6 +109,7 @@ export type VideoRow = {
   publish_at: string | null
   published_at: string | null
   block_reason: string | null
+  format: VideoFormat
   created_at: string
   updated_at: string
 }
@@ -323,6 +327,7 @@ export type Database = {
     }
     Enums: {
       org_role: OrgRole
+      video_format: VideoFormat
       script_status: ScriptStatus
       video_status: VideoStatus
       job_status: JobStatus

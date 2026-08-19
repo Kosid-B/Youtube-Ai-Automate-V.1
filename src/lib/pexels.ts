@@ -98,6 +98,8 @@ export async function searchPhotos(
 export type PickOptions = {
   /** ความกว้างขั้นต่ำที่ยอมรับ — เล็กกว่าเฟรมแล้วซูมจะเบลอ */
   minWidth?: number
+  /** ความสูงขั้นต่ำ — จำเป็นสำหรับคลิปแนวตั้งที่ความกว้างไม่ใช่ตัวกำหนด */
+  minHeight?: number
   /** id ของภาพที่ใช้ไปแล้วในคลิปนี้ ห้ามหยิบซ้ำ */
   usedIds?: ReadonlySet<number>
 }
@@ -115,9 +117,14 @@ export function pickPhoto(
   options: PickOptions = {},
 ): PexelsPhoto | null {
   const minWidth = options.minWidth ?? 1920
+  const minHeight = options.minHeight ?? 0
   const used = options.usedIds ?? new Set<number>()
 
-  const candidates = photos.filter((p) => !used.has(p.id) && p.width >= minWidth)
+  // ต้องดูทั้งกว้างและสูง — คลิปแนวตั้งใช้ภาพกว้าง ~1080 สูง ~1920
+  // เกณฑ์กว้าง ≥1920 อย่างเดียวจะคัดภาพแนวตั้งทิ้งหมดจนหาภาพไม่ได้เลยสักฉาก
+  const candidates = photos.filter(
+    (p) => !used.has(p.id) && p.width >= minWidth && p.height >= minHeight,
+  )
   if (candidates.length === 0) return null
 
   // Pexels เรียงตามความเกี่ยวข้องอยู่แล้ว จึงคงลำดับไว้ แค่คัดตัวที่ใช้ไม่ได้ออก

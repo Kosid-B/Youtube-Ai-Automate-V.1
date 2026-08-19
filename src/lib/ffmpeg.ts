@@ -16,6 +16,8 @@ export type FfmpegOptions = {
   outputPath: string
   fontName?: string
   fontSize?: number
+  /** ระยะซับจากขอบล่าง — คลิปแนวตั้งต้องยกสูงหนี UI ของ YouTube Shorts */
+  marginV?: number
   /** ไดเรกทอรีของฟอนต์ ถ้าไม่ได้ติดตั้งในระบบ */
   fontsDir?: string
   crf?: number
@@ -143,7 +145,7 @@ export function buildFfmpegCommand(plan: RenderPlan, options: FfmpegOptions): Ff
     'Outline=2',
     'Shadow=0',
     'Alignment=2',
-    'MarginV=48',
+    `MarginV=${options.marginV ?? 48}`,
   ].join(',')
 
   filters.push(

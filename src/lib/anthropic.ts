@@ -1,5 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk'
 
+import { FORMATS, targetScriptChars, type VideoFormat } from '@/lib/formats'
+import { THAI_CHARS_PER_SECOND } from '@/lib/scenes'
+
 /** โมเดลที่ใช้เขียนสคริปต์ */
 export const SCRIPT_MODEL = 'claude-opus-5'
 
@@ -31,6 +34,8 @@ export interface ScriptBrief {
    * null = ข้อมูลยังไม่พอ ห้ามใส่อะไรเข้า prompt เลย ปล่อยให้โมเดลตัดสินเอง
    */
   performanceNote?: string | null
+  /** รูปแบบคลิป — กำหนดความยาวสคริปต์ที่ต้องเขียน */
+  format?: VideoFormat
 }
 
 export interface GeneratedScript {
@@ -66,6 +71,28 @@ const SYSTEM = `คุณเขียนสคริปต์คลิป YouTub
 
 sources = รายการที่มาของข้อมูลที่อ้าง ถ้าสคริปต์ไม่ได้อ้างข้อมูลภายนอกเลย ให้ส่งเป็นลิสต์ว่าง`
 
+/**
+ * บอกโมเดลให้ชัดว่าเขียนยาวแค่ไหน
+ *
+ * ไม่บอก = ได้สคริปต์ยาวเท่ากันทุกครั้ง แล้วคลิปสั้นจะกลายเป็นคลิป 8 นาที
+ * ซึ่ง YouTube ไม่นับเป็น Short — เสียเหตุผลเดียวที่ทำคลิปสั้น
+ */
+function formatBrief(format: VideoFormat): string {
+  const spec = FORMATS[format]
+  const chars = targetScriptChars(format, THAI_CHARS_PER_SECOND)
+
+  return format === 'short'
+    ? [
+        `รูปแบบ: คลิปสั้นแนวตั้ง ยาว ~${spec.targetSeconds} วินาที`,
+        `ความยาวสคริปต์: ~${chars} ตัวอักษร (เกิน ${Math.round(chars * 1.3)} ถือว่ายาวเกินไป)`,
+        'เข้าเรื่องภายในประโยคแรก ไม่มีเกริ่น ไม่มีทวนซ้ำ จบด้วยประโยคเดียวที่ให้คนอยากรู้ต่อ',
+      ].join('\n')
+    : [
+        `รูปแบบ: คลิปยาวแนวนอน ยาว ~${Math.round(spec.targetSeconds / 60)} นาที`,
+        `ความยาวสคริปต์: ~${chars} ตัวอักษร`,
+      ].join('\n')
+}
+
 export async function generateScript(brief: ScriptBrief): Promise<GeneratedScript> {
   const recent = brief.recentTitles.length
     ? `\n\nคลิปที่ช่องนี้ทำไปแล้ว (ห้ามเล่าซ้ำ ต้องหามุมใหม่):\n${brief.recentTitles
@@ -86,6 +113,7 @@ export async function generateScript(brief: ScriptBrief): Promise<GeneratedScrip
       {
         role: 'user',
         content: [
+          formatBrief(brief.format ?? 'long'),
           `ช่อง: ${brief.channelName}`,
           brief.niche ? `แนวเนื้อหา: ${brief.niche}` : null,
           `หัวข้อ: ${brief.title}`,
