@@ -1,7 +1,8 @@
 'use client'
 
 import { useActionState } from 'react'
-import { saveTarget, topUpCredits, type SettingsState } from './actions'
+import { saveCta, saveTarget, topUpCredits, type SettingsState } from './actions'
+import { VISIBLE_CHARS } from '@/lib/description'
 
 const INITIAL: SettingsState = { error: null, ok: null }
 
@@ -85,6 +86,40 @@ export function TopUpForm() {
         />
         <button type="submit" disabled={pending} className={`${BUTTON} border border-line bg-surface-2`}>
           {pending ? 'กำลังเติม…' : 'เติมเครดิต'}
+        </button>
+      </div>
+      <Feedback state={state} />
+    </form>
+  )
+}
+
+/**
+ * ข้อความชวนคลิกของช่อง
+ *
+ * Postel's Law: ช่องที่ยังไม่ตั้งต้องบอกว่าทำอะไร ไม่ใช่ปล่อยว่างเฉย ๆ
+ * Tesler's Law: ความจริงที่ว่า YouTube ตัดคำอธิบายเป็นเรื่องที่ผู้ใช้ไม่ควรต้องรู้เอง
+ *               ระบบเตือนให้ตอนบันทึกแทน
+ */
+export function CtaForm({ channelId, current }: { channelId: string; current: string | null }) {
+  const [state, action, pending] = useActionState(saveCta, INITIAL)
+
+  return (
+    <form action={action} className="mt-2">
+      <input type="hidden" name="channelId" value={channelId} />
+      <textarea
+        name="cta"
+        rows={3}
+        defaultValue={current ?? ''}
+        placeholder={'อยากได้ระบบที่ทำสิ่งนี้ให้อัตโนมัติ → https://ceoaithailand.org'}
+        className={`${FIELD} resize-y leading-relaxed`}
+      />
+      <p className="mt-1 text-xs text-ink-muted">
+        วางลิงก์ไว้ภายใน {VISIBLE_CHARS} ตัวอักษรแรก — YouTube ตัดคำอธิบายที่เหลือไปซ่อนหลังปุ่ม
+        “แสดงเพิ่มเติม” ซึ่งคนส่วนใหญ่ไม่กด
+      </p>
+      <div className="mt-2">
+        <button type="submit" disabled={pending} className={`${BUTTON} border border-line bg-surface-2`}>
+          {pending ? 'กำลังบันทึก…' : 'บันทึกข้อความชวนคลิก'}
         </button>
       </div>
       <Feedback state={state} />

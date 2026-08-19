@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { CREDITS_PER_CLIP, estimateSpendThb } from '@/lib/costs'
-import { TargetForm, TopUpForm } from './forms'
+import { CtaForm, TargetForm, TopUpForm } from './forms'
 
 export const dynamic = 'force-dynamic'
 
@@ -69,20 +69,23 @@ export default async function SettingsPage() {
         <TargetForm current={org.monthly_target} />
       </Card>
 
-      <Card title="ช่อง YouTube" hint={`${channels?.length ?? 0} ช่อง`}>
+      <Card title="ข้อความชวนคลิกใต้คลิป" hint={`${channels?.length ?? 0} ช่อง`}>
         {/* Postel's Law: สถานะที่ยังไม่พร้อมต้องบอกว่าทำอะไรต่อ ไม่ใช่บอกแค่ว่ายังไม่มี */}
         <ul className="mt-3 divide-y divide-line">
           {(channels ?? []).map((channel) => (
-            <li key={channel.channel_id} className="flex items-center justify-between gap-3 py-2.5">
-              <span className="min-w-0 flex-1 truncate">{channel.channel_name}</span>
-              <span
-                className="shrink-0 text-xs"
-                style={{
-                  color: channel.connected ? 'var(--color-live)' : 'var(--color-ink-muted)',
-                }}
-              >
-                {channel.connected ? 'เชื่อมแล้ว' : 'ยังไม่เชื่อม'}
-              </span>
+            <li key={channel.channel_id} className="py-3">
+              <div className="flex items-center justify-between gap-3">
+                <span className="min-w-0 flex-1 truncate font-medium">{channel.channel_name}</span>
+                <span
+                  className="shrink-0 text-xs"
+                  style={{
+                    color: channel.connected ? 'var(--color-live)' : 'var(--color-ink-muted)',
+                  }}
+                >
+                  {channel.connected ? 'เชื่อมแล้ว' : 'ยังไม่เชื่อม'}
+                </span>
+              </div>
+              <CtaForm channelId={channel.channel_id} current={channel.cta} />
             </li>
           ))}
         </ul>

@@ -12,6 +12,7 @@ import { creditBlock, downloadPhoto, pickPhoto, searchPhotos, type PexelsPhoto }
 import { buildRenderPlan } from '@/lib/render-plan'
 import { splitIntoScenes, type Scene } from '@/lib/scenes'
 import { formatSpec, formatWarning, minPhotoSize } from '@/lib/formats'
+import { buildDescription, ctaWarning } from '@/lib/description'
 import { toSrt } from '@/lib/subtitles'
 import { synthesize } from '@/lib/tts'
 import { track } from '@/lib/analytics'
@@ -77,7 +78,7 @@ export async function videoRender(
 
   const { data: channel } = await db
     .from('channels')
-    .select('niche')
+    .select('niche, cta_template')
     .eq('id', video.channel_id)
     .single()
 
@@ -137,9 +138,16 @@ export async function videoRender(
 
     if (uploadError) throw new Error(`อัปไฟล์ขึ้น Storage ไม่สำเร็จ: ${uploadError.message}`)
 
-    // เครดิตช่างภาพต่อท้ายคำอธิบาย — เราแจ้ง Pexels ไว้ว่าจะทำ
-    const credits = creditBlock(images.credits)
-    const description = [video.description?.trim(), credits].filter(Boolean).join('\n\n')
+    // ลิงก์บนสุด เนื้อหากลาง เครดิตช่างภาพท้ายสุด — YouTube ตัดคำอธิบายเหลือ
+    // 2–3 บรรทัดแรก ลิงก์ที่อยู่ท้ายเท่ากับไม่มีลิงก์
+    const description = buildDescription({
+      cta: channel?.cta_template ?? null,
+      body: video.description ?? null,
+      credits: creditBlock(images.credits),
+    })
+
+    const ctaProblem = ctaWarning(channel?.cta_template ?? null)
+    if (ctaProblem) console.warn(`[video_render] ${video.id} ⚠️ ${ctaProblem}`)
 
     await db
       .from('videos')

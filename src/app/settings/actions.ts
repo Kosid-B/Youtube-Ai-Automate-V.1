@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { ctaWarning } from '@/lib/description'
 
 export type SettingsState = { error: string | null; ok: string | null }
 
@@ -93,4 +94,32 @@ export async function topUpCredits(
   revalidatePath('/')
   revalidatePath('/settings')
   return { error: null, ok: `เติม ${amount} เครดิตแล้ว` }
+}
+
+/**
+ * ตั้งข้อความชวนคลิก + ลิงก์ของช่อง
+ *
+ * ไม่ตรวจเนื้อความให้ นอกจากเตือนเรื่องตำแหน่งลิงก์ — ข้อความเป็นการตัดสินใจ
+ * ทางการตลาดของเจ้าของ ระบบมีหน้าที่ทำให้มันไปโผล่ถูกที่เท่านั้น
+ */
+export async function saveCta(_prev: SettingsState, formData: FormData): Promise<SettingsState> {
+  const channelId = String(formData.get('channelId') ?? '')
+  const cta = String(formData.get('cta') ?? '')
+
+  if (!channelId) return { error: 'ไม่มีรหัสช่อง', ok: null }
+
+  const supabase = await createClient()
+  const { error } = await supabase.rpc('set_channel_cta', {
+    p_channel_id: channelId,
+    p_cta: cta,
+  })
+
+  if (error) return { error: error.message, ok: null }
+
+  revalidatePath('/settings')
+
+  const warning = ctaWarning(cta)
+  return warning
+    ? { error: null, ok: `บันทึกแล้ว · ⚠️ ${warning}` }
+    : { error: null, ok: 'บันทึกแล้ว — ลิงก์จะอยู่บนสุดของคำอธิบายทุกคลิป' }
 }

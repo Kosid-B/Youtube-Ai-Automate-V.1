@@ -68,6 +68,7 @@ export type ChannelRow = {
   oauth_secret_id: string | null
   /** null = ให้ระบบเลือก project จากคลังให้ · มีค่า = ลูกค้าปักหมุดเอง (BYO) */
   quota_project_key: string | null
+  cta_template: string | null
   created_at: string
 }
 
@@ -320,9 +321,18 @@ export type Database = {
         Args: { p_channel_id: string }
         Returns: undefined
       }
+      set_channel_cta: {
+        Args: { p_channel_id: string; p_cta: string }
+        Returns: ChannelRow
+      }
       channel_oauth_status: {
         Args: { p_org_id: string }
-        Returns: { channel_id: string; channel_name: string; connected: boolean }[]
+        Returns: {
+          channel_id: string
+          channel_name: string
+          connected: boolean
+          cta: string | null
+        }[]
       }
     }
     Enums: {
