@@ -96,3 +96,25 @@ Supabase อยู่ที่โตเกียว (`ap-northeast-1`) จึง
 - [ ] ล็อกอินด้วยอีเมลแล้วลิงก์พากลับมาที่โดเมนใหม่ ไม่ใช่ localhost
 - [ ] เห็นองค์กรกับคลิปเดิมครบ (ฐานข้อมูลเดียวกับตอนรันบนเครื่อง)
 - [ ] เปิด `pnpm worker` บนเครื่อง แล้วสั่งสร้างสคริปต์จากมือถือ → งานเดินจริง
+
+---
+
+## ถ้าเจอ `MIDDLEWARE_INVOCATION_FAILED`
+
+middleware ทำงานกับทุก request ล้มเมื่อไรเว็บ 500 ทั้งใบรวมถึงหน้า login
+โค้ดตอนนี้ห่อ try/catch ไว้แล้ว เจอ error นี้ = ยังไม่ได้ deploy เวอร์ชันที่แก้
+
+**สาเหตุที่พบบ่อยที่สุด เรียงตามโอกาส**
+
+| สาเหตุ | ตรวจยังไง |
+|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` มีช่องว่าง/ขึ้นบรรทัดใหม่ติดมาตอน copy | เปิดค่าใน Vercel ดูว่ามี space ท้ายไหม |
+| ใส่ URL ไม่ครบ (ลืม `https://`) | ต้องเป็น `https://xxxx.supabase.co` เต็ม ๆ |
+| ใส่ env แล้วแต่ยังไม่ redeploy | Vercel ไม่เอา env ใหม่ไปใช้กับ deployment เดิม ต้อง **Redeploy** |
+| เลือก environment ไม่ครบ | ต้องติ๊ก Production ด้วย ไม่ใช่แค่ Preview |
+
+**ดู error จริง**: Vercel → โปรเจค → **Logs** → กรอง `Edge Middleware`
+ข้อความจะขึ้นต้นด้วย `[middleware]`
+
+**หมายเหตุ** — `regions: ["hnd1"]` ใน `vercel.json` ใช้กับ serverless function เท่านั้น
+**middleware รันที่ edge ทุกภูมิภาคเสมอ** เห็น `sin1` ใน error ไม่ได้แปลว่าตั้งค่าผิด
