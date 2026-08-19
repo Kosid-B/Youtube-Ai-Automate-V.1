@@ -7,7 +7,18 @@ import { FORMATS, type VideoFormat } from '@/lib/formats'
 
 type Channel = { id: string; name: string }
 
-export function NewScriptForm({ channels, credits }: { channels: Channel[]; credits: number }) {
+export function NewScriptForm({
+  channels,
+  credits,
+  presetTitle,
+  ideaId,
+}: {
+  channels: Channel[]
+  credits: number
+  /** หัวข้อที่เลือกมาจากหน้าหัวข้อคลิป — เติมให้เลย ไม่ต้องพิมพ์ซ้ำ */
+  presetTitle?: string
+  ideaId?: string
+}) {
   const router = useRouter()
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -30,6 +41,8 @@ export function NewScriptForm({ channels, credits }: { channels: Channel[]; cred
         title: String(form.get('title') ?? '').trim(),
         brief: String(form.get('brief') ?? '').trim() || undefined,
         format,
+        // ผูกสคริปต์กลับไปที่หัวข้อต้นทาง จะได้ตามได้ว่าหัวข้อแบบไหนกลายเป็นคลิปจริง
+        idea_id: ideaId,
       }),
     })
 
@@ -108,6 +121,7 @@ export function NewScriptForm({ channels, credits }: { channels: Channel[]; cred
           id="title"
           name="title"
           required
+          defaultValue={presetTitle ?? ''}
           placeholder="เช่น ทำไมร้านกาแฟถึงเจ๊งในปีแรก"
           className="mt-2 w-full rounded-lg border border-line bg-surface px-3.5 py-3 outline-none placeholder:text-ink-muted/60 focus:border-ink-muted"
         />

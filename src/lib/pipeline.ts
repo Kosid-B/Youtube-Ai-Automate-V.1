@@ -90,6 +90,7 @@ export function progressPercent(step: number): number {
 }
 
 const JOB_LABEL: Record<JobKind, string> = {
+  idea_generate: 'คิดหัวข้อ',
   script_generate: 'เขียนสคริปต์',
   video_render: 'ตัดต่อคลิป',
   youtube_upload: 'ส่งขึ้น YouTube',

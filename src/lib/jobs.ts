@@ -6,6 +6,7 @@ type Client = SupabaseClient<Database>
 
 /** payload ของแต่ละชนิดงาน — handler อ่านค่าจากตรงนี้ */
 export type JobPayloads = {
+  idea_generate: { channel_id: string; count: number; segment?: string }
   script_generate: { script_id: string; channel_id: string; brief?: string }
   video_render: { video_id: string; script_id: string }
   youtube_upload: { video_id: string; channel_id: string }

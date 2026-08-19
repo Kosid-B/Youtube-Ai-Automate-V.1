@@ -22,6 +22,7 @@ const PRODUCT = 'yt-factory'
 
 export type AnalyticsEvent =
   // ── ฝั่งระบบ: ใช้เครื่องมือนี้แล้วติดตรงไหน ──
+  | 'ideas_generated'
   | 'script_generated'
   | 'script_blocked'
   | 'render_started'

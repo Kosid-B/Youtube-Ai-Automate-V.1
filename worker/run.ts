@@ -9,6 +9,7 @@ import {
 import { JOB_COST, grantCredits } from '@/lib/credits'
 import { track } from '@/lib/analytics'
 import type { JobKind, JobRow } from '@/lib/database.types'
+import { ideaGenerate } from './handlers/idea-generate'
 import { scriptGenerate } from './handlers/script-generate'
 import { videoRender } from './handlers/video-render'
 import { youtubeUpload } from './handlers/youtube-upload'
@@ -20,6 +21,7 @@ const POLL_INTERVAL_MS = Number(process.env.WORKER_POLL_INTERVAL_MS ?? 2000)
 type Handler<K extends JobKind> = (db: WorkerClient, payload: JobPayloads[K]) => Promise<void>
 
 const HANDLERS: { [K in JobKind]: Handler<K> } = {
+  idea_generate: ideaGenerate,
   script_generate: scriptGenerate,
   video_render: videoRender,
   youtube_upload: youtubeUpload,

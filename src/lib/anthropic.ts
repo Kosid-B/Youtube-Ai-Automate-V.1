@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 
 import { FORMATS, targetScriptChars, type VideoFormat } from '@/lib/formats'
+import { ideaContext, type IdeaBrief } from '@/lib/idea-angles'
 import { THAI_CHARS_PER_SECOND } from '@/lib/scenes'
 
 /** โมเดลที่ใช้เขียนสคริปต์ */
@@ -231,4 +232,80 @@ export async function sceneImageQueries(
 /** คำค้นสำรองกลาง ๆ ที่ยังเข้ากับคลิปสายธุรกิจ ใช้เมื่อโมเดลไม่ได้ให้คำค้นของฉากนั้นมา */
 function fallbackQuery(context: { niche?: string | null }): string {
   return context.niche?.trim() ? 'business workplace' : 'abstract background'
+}
+
+const IDEA_SCHEMA = {
+  type: 'object',
+  properties: {
+    ideas: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          title: { type: 'string' },
+          angle: { type: 'string' },
+          hook: { type: 'string' },
+          segment: { type: 'string' },
+          /** 0–1 ความมั่นใจว่ามีคนอยากรู้เรื่องนี้จริง */
+          demand: { type: 'number' },
+          reason: { type: 'string' },
+        },
+        required: ['title', 'angle', 'hook', 'segment', 'demand', 'reason'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['ideas'],
+  additionalProperties: false,
+} as const
+
+const IDEA_SYSTEM = `คุณคิดหัวข้อคลิป YouTube ภาษาไทยให้ช่องธุรกิจ
+
+หน้าที่ของคุณคือเสนอหัวข้อที่ "มีคนอยากรู้จริง" ไม่ใช่หัวข้อที่ฟังดูดี
+
+เกณฑ์ของหัวข้อที่ใช้ได้:
+- เป็นปัญหาที่คนกลุ่มเป้าหมายเจอจริงและยังไม่มีใครตอบให้ชัด
+- คนที่เจอปัญหานี้จะพิมพ์ค้นด้วยคำแบบไหน หัวข้อควรมีคำนั้นอยู่
+- เนื้อหาในคลิปต้องตอบสิ่งที่หัวข้อสัญญาได้จริงภายในความยาวที่ทำได้
+
+ช่อง demand ให้ประเมินตรง ๆ 0–1 ว่ามีคนอยากรู้เรื่องนี้แค่ไหน
+ถ้าไม่มั่นใจให้ใส่ต่ำ อย่าให้คะแนนสูงทุกหัวข้อเพราะจะไม่ช่วยคัดอะไรเลย
+
+ช่อง reason ให้บอกเหตุผลสั้น ๆ ว่าทำไมคิดว่าคนอยากรู้ — ถ้าเขียนเหตุผลไม่ออก
+แปลว่าหัวข้อนั้นยังไม่ดีพอ`
+
+export type GeneratedIdea = {
+  title: string
+  angle: string
+  hook: string
+  segment: string
+  demand: number
+  reason: string
+}
+
+/**
+ * คิดหัวข้อคลิปจากข้อมูลกลุ่มเป้าหมายจริง
+ *
+ * เรียกครั้งเดียวได้หลายหัวข้อ เพื่อให้โมเดลเห็นหัวข้ออื่นที่ตัวเองเสนอไปแล้ว
+ * แล้วเลี่ยงการเสนอเรื่องเดียวกันในมุมต่างกันเล็กน้อย — เรียกทีละหัวข้อจะได้ของซ้ำ
+ */
+export async function generateIdeas(brief: IdeaBrief): Promise<GeneratedIdea[]> {
+  const response = await anthropic().messages.create({
+    model: SCRIPT_MODEL,
+    max_tokens: 4000,
+    thinking: { type: 'adaptive' },
+    output_config: {
+      // คิดหัวข้อไม่ต้องใช้ความพยายามเท่าเขียนสคริปต์ทั้งเรื่อง
+      effort: 'medium',
+      format: { type: 'json_schema', schema: IDEA_SCHEMA },
+    },
+    system: IDEA_SYSTEM,
+    messages: [{ role: 'user', content: ideaContext(brief) }],
+  })
+
+  const block = response.content.find((part) => part.type === 'text')
+  if (!block || block.type !== 'text') throw new Error('โมเดลไม่ได้ตอบเป็นข้อความ')
+
+  const parsed = JSON.parse(block.text) as { ideas: GeneratedIdea[] }
+  return parsed.ideas
 }

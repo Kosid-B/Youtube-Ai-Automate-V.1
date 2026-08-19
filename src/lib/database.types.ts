@@ -17,7 +17,12 @@ export type VideoStatus =
   | 'blocked'
 export type JobStatus = 'queued' | 'claimed' | 'done' | 'failed' | 'dead'
 
-export type JobKind = 'script_generate' | 'video_render' | 'youtube_upload' | 'metrics_sync'
+export type JobKind =
+  | 'idea_generate'
+  | 'script_generate'
+  | 'video_render'
+  | 'youtube_upload'
+  | 'metrics_sync'
 
 export type ContentFeaturesRow = {
   id: string

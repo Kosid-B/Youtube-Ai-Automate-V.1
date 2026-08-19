@@ -196,6 +196,9 @@ export default async function Page() {
 
         {/* Hick's Law: หน้านี้มีปุ่มหลักปุ่มเดียว — ตั้งค่าเป็นลิงก์ข้อความ ไม่ใช่ปุ่มแข่งกัน */}
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+          <Link href="/ideas" className="text-sm text-ink-muted transition hover:text-ink">
+            หัวข้อคลิป
+          </Link>
           <Link href="/settings" className="text-sm text-ink-muted transition hover:text-ink">
             ตั้งค่า
           </Link>

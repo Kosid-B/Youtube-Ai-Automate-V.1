@@ -5,6 +5,8 @@ type Client = SupabaseClient<Database>
 
 /** เครดิตที่ตัดต่องาน 1 ชิ้น — ตัดตอนเข้าคิว ไม่ใช่ตอนงานเสร็จ */
 export const JOB_COST: Record<JobKind, number> = {
+  // คิดหัวข้อเรียกโมเดลครั้งเดียวได้หลายหัวข้อ ถูกกว่าเขียนสคริปต์มาก
+  idea_generate: 1,
   script_generate: 1,
   video_render: 5,
   youtube_upload: 1,

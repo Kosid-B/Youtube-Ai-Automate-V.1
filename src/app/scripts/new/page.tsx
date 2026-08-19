@@ -4,7 +4,13 @@ import { NewScriptForm } from './form'
 
 export const dynamic = 'force-dynamic'
 
-export default async function NewScriptPage() {
+export default async function NewScriptPage({
+  searchParams,
+}: {
+  // มาจากปุ่ม "เขียนสคริปต์จากหัวข้อนี้" ในหน้าหัวข้อคลิป
+  searchParams: Promise<{ title?: string; idea?: string }>
+}) {
+  const params = await searchParams
   const supabase = await createClient()
 
   const {
@@ -34,7 +40,12 @@ export default async function NewScriptPage() {
         AI จะเขียนสคริปต์ให้ก่อน แล้วคุณค่อยตรวจก่อนสั่งตัดต่อ
       </p>
 
-      <NewScriptForm channels={channels} credits={org?.credits ?? 0} />
+      <NewScriptForm
+        channels={channels}
+        credits={org?.credits ?? 0}
+        presetTitle={params.title}
+        ideaId={params.idea}
+      />
     </main>
   )
 }
