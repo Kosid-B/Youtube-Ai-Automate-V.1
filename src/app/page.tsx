@@ -49,7 +49,7 @@ export default async function Page() {
   const [{ data: videos }, { data: jobs }] = await Promise.all([
     supabase
       .from('videos')
-      .select('id, title, status, block_reason, published_at')
+      .select('id, title, status, block_reason, published_at, storage_path')
       .order('created_at', { ascending: false })
       .limit(60),
     supabase
@@ -122,6 +122,10 @@ export default async function Page() {
         // เหตุผลที่ระบบบล็อกมีค่ากว่าคำว่า "ถูกบล็อก" — เอามาแสดงแทนเมื่อมี
         detail: video.block_reason ?? stage.detail,
         step: stage.step,
+        // มีไฟล์แล้วต้องเอาออกไปใช้ได้จากในแอป ไม่ใช่ต้องไปเปิด Supabase Dashboard เอง
+        action: video.storage_path
+          ? { href: `/api/videos/${video.id}/download`, label: '⬇ ดาวน์โหลด mp4' }
+          : undefined,
       } satisfies Row,
       stage,
       status: video.status,
@@ -190,7 +194,11 @@ export default async function Page() {
           </p>
         </div>
 
-        {/* Hick's Law: หน้านี้มีปุ่มหลักปุ่มเดียว · Fitts's Law: เต็มความกว้างบนมือถือ */}
+        {/* Hick's Law: หน้านี้มีปุ่มหลักปุ่มเดียว — ตั้งค่าเป็นลิงก์ข้อความ ไม่ใช่ปุ่มแข่งกัน */}
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+          <Link href="/settings" className="text-sm text-ink-muted transition hover:text-ink">
+            ตั้งค่า
+          </Link>
         <Link
           href="/scripts/new"
           className="w-full rounded-lg px-4 py-2.5 text-center font-medium transition sm:w-auto"
@@ -198,6 +206,7 @@ export default async function Page() {
         >
           สร้างคลิปใหม่
         </Link>
+        </div>
       </header>
 
       {kpis.length > 0 && <KpiStrip items={kpis} />}

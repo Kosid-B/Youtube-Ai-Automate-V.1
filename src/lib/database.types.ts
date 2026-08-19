@@ -304,6 +304,22 @@ export type Database = {
         Args: { p_job_id: string }
         Returns: JobRow
       }
+      store_channel_oauth: {
+        Args: { p_channel_id: string; p_refresh_token: string }
+        Returns: undefined
+      }
+      channel_refresh_token: {
+        Args: { p_channel_id: string }
+        Returns: string
+      }
+      disconnect_channel_oauth: {
+        Args: { p_channel_id: string }
+        Returns: undefined
+      }
+      channel_oauth_status: {
+        Args: { p_org_id: string }
+        Returns: { channel_id: string; channel_name: string; connected: boolean }[]
+      }
     }
     Enums: {
       org_role: OrgRole

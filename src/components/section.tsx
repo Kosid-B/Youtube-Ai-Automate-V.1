@@ -10,6 +10,8 @@ export type Row = {
   detail: string
   /** ขั้นในสายการผลิต — ไม่ใส่ = ไม่ต้องแสดงแถบความคืบหน้า */
   step?: number
+  /** ปุ่มท้ายแถว เช่นดาวน์โหลดคลิปที่เรนเดอร์เสร็จแล้ว */
+  action?: { href: string; label: string }
 }
 
 /**
@@ -59,6 +61,14 @@ export function Section({
                 <div className="mt-2.5">
                   <ProgressBar step={row.step} tone={row.tone} />
                 </div>
+              )}
+              {row.action && (
+                <a
+                  href={row.action.href}
+                  className="mt-2.5 inline-block rounded-lg border border-line bg-surface-2 px-3 py-1.5 text-xs font-medium transition hover:border-ink-muted"
+                >
+                  {row.action.label}
+                </a>
               )}
             </li>
           ))
