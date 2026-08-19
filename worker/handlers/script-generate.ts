@@ -82,6 +82,7 @@ export async function scriptGenerate(
     angle: null,
     recentTitles: (recent ?? []).map((row) => row.title),
     brief: payload.brief,
+    performanceNote,
   })
 
   // ตรวจความซ้ำตั้งแต่ตอนนี้ เพื่อให้ผู้ใช้เห็นปัญหาก่อนจะไปกดสั่ง render
