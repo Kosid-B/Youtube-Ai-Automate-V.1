@@ -13,6 +13,7 @@ import { buildRenderPlan } from '@/lib/render-plan'
 import { splitIntoScenes, type Scene } from '@/lib/scenes'
 import { toSrt } from '@/lib/subtitles'
 import { synthesize } from '@/lib/tts'
+import { track } from '@/lib/analytics'
 
 const run = promisify(execFile)
 
@@ -83,6 +84,7 @@ export async function videoRender(
   if (scenes.length === 0) throw new Error('แบ่งฉากจากสคริปต์ไม่ได้')
 
   await db.from('videos').update({ status: 'rendering' }).eq('id', video.id)
+  await track('render_started', video.org_id, { scenes: scenes.length })
 
   const workDir = await mkdtemp(join(tmpdir(), `ytf-${video.id}-`))
 
@@ -129,9 +131,20 @@ export async function videoRender(
       .update({ status: 'ready', storage_path: storagePath, description })
       .eq('id', video.id)
 
+    await track('render_completed', video.org_id, {
+      scenes: scenes.length,
+      seconds: plan.totalSeconds,
+      images: images.paths.length,
+    })
+
     console.log(`[video_render] ${video.id} เสร็จ → ${storagePath}`)
   } catch (error) {
     await db.from('videos').update({ status: 'failed' }).eq('id', video.id)
+    await track('render_failed', video.org_id, {
+      scenes: scenes.length,
+      // ข้อความ error เป็นของเราเอง ไม่ใช่ข้อมูลผู้ใช้ — ตัดสั้นกันโควตา property
+      reason: String((error as Error).message).slice(0, 120),
+    })
     throw error
   } finally {
     await rm(workDir, { recursive: true, force: true })

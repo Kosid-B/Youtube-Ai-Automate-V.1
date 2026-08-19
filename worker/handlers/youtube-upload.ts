@@ -2,6 +2,7 @@ import type { WorkerClient } from '../supabase'
 import { type JobPayloads, DeferJobSignal } from '@/lib/jobs'
 import { QUOTA_COST, reserveQuotaForChannel, releaseQuota, quotaResetsAt } from '@/lib/quota'
 import { checkOriginality, isBlocked, type ChecklistKey } from '@/lib/originality'
+import { track } from '@/lib/analytics'
 
 const CORPUS_LIMIT = 200
 
@@ -131,6 +132,9 @@ export async function youtubeUpload(
         published_at: new Date().toISOString(),
       })
       .eq('id', video.id)
+
+    // จุดที่คลิปออกจากระบบเราไปหาผู้ชม — ต้นทางของทุกตัวเลขผลงานที่จะตามมา
+    await track('video_published', video.org_id, { youtube_video_id: youtubeVideoId })
 
     console.log(`[youtube_upload] ${video.id} → ${youtubeVideoId}`)
   } catch (error) {

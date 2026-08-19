@@ -7,6 +7,7 @@ import {
   type JobPayloads,
 } from '@/lib/jobs'
 import { JOB_COST, grantCredits } from '@/lib/credits'
+import { track } from '@/lib/analytics'
 import type { JobKind, JobRow } from '@/lib/database.types'
 import { scriptGenerate } from './handlers/script-generate'
 import { videoRender } from './handlers/video-render'
@@ -73,6 +74,12 @@ async function runJob(db: WorkerClient, job: JobRow): Promise<void> {
     const closed = await completeJob(db, job.id, false, message)
     if (closed.status === 'dead') {
       await refundDeadJob(db, closed)
+      // งานที่ตายถาวรคือสิ่งเดียวที่ต้องให้คนมาดู วัดไว้ว่าเกิดบ่อยแค่ไหนกับงานประเภทไหน
+      await track('job_dead', job.org_id, {
+        kind: job.kind,
+        attempts: closed.attempts,
+        reason: message.slice(0, 120),
+      })
     }
   }
 }

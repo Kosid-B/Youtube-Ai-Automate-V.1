@@ -2,6 +2,7 @@ import type { WorkerClient } from '../supabase'
 import type { JobPayloads } from '@/lib/jobs'
 import { generateScript } from '@/lib/anthropic'
 import { buildGuidance, guidanceText } from '@/lib/content-feedback'
+import { track } from '@/lib/analytics'
 import { checkOriginality, SIMILARITY_BLOCK } from '@/lib/originality'
 import type { Json } from '@/lib/database.types'
 
@@ -113,6 +114,15 @@ export async function scriptGenerate(
       status: report.similarity >= SIMILARITY_BLOCK ? 'blocked' : 'draft',
     })
     .eq('id', script.id)
+
+  const blocked = report.similarity >= SIMILARITY_BLOCK
+
+  await track(blocked ? 'script_blocked' : 'script_generated', script.org_id, {
+    chars: generated.body.length,
+    similarity: Math.round(report.similarity * 100) / 100,
+    // บันทึกว่ารอบนี้ป้อนผลงานเก่าเข้าไปหรือเปล่า จะได้เทียบทีหลังว่าช่วยจริงไหม
+    used_feedback: performanceNote !== null,
+  })
 
   console.log(
     `[script_generate] ${script.id} เสร็จ — ซ้ำ ${Math.round(report.similarity * 100)}%`,
