@@ -13,6 +13,7 @@ import { buildRenderPlan } from '@/lib/render-plan'
 import { splitIntoScenes, type Scene } from '@/lib/scenes'
 import { formatSpec, formatWarning, minPhotoSize } from '@/lib/formats'
 import { buildDescription, ctaWarning } from '@/lib/description'
+import { buildThumbnailAss, buildThumbnailCommand, thumbnailLines } from '@/lib/thumbnail'
 import { toSrt } from '@/lib/subtitles'
 import { synthesize } from '@/lib/tts'
 import { track } from '@/lib/analytics'
@@ -57,7 +58,7 @@ export async function videoRender(
 ): Promise<void> {
   const { data: video } = await db
     .from('videos')
-    .select('id, org_id, channel_id, title, storage_path, description, format')
+    .select('id, org_id, channel_id, title, storage_path, description, format, thumbnail_path')
     .eq('id', payload.video_id)
     .single()
 
@@ -128,6 +129,9 @@ export async function videoRender(
     console.log(`[video_render] ${video.id} เริ่มประกอบ ${scenes.length} ฉาก ${plan.totalSeconds}s`)
     await run('ffmpeg', args, { timeout: FFMPEG_TIMEOUT_MS, maxBuffer: 32 * 1024 * 1024 })
 
+    // ปกสร้างจากภาพฉากแรก — ภาพที่คนเห็นก่อนกดควรตรงกับสิ่งที่คลิปเปิดเรื่อง
+    const thumbnailPath = await makeThumbnail(db, video, images.paths[0], spec, workDir)
+
     const storagePath = `${video.org_id}/${video.id}.mp4`
     const { error: uploadError } = await db.storage
       .from('videos')
@@ -151,7 +155,12 @@ export async function videoRender(
 
     await db
       .from('videos')
-      .update({ status: 'ready', storage_path: storagePath, description })
+      .update({
+        status: 'ready',
+        storage_path: storagePath,
+        thumbnail_path: thumbnailPath,
+        description,
+      })
       .eq('id', video.id)
 
     await track('render_completed', video.org_id, {
@@ -294,4 +303,53 @@ async function collectAudio(
   }
 
   return { paths, durations }
+}
+
+/**
+ * สร้างปกแล้วอัปขึ้น Storage
+ *
+ * ล้มแล้วไม่ล้มทั้งงาน — คลิปที่ไม่มีปกยังใช้ได้ (YouTube สุ่มเฟรมให้)
+ * แต่คลิปที่เรนเดอร์เสร็จแล้วต้องล้มเพราะทำปกไม่ได้ คือการทิ้งงานที่จ่ายเงินไปแล้ว
+ */
+async function makeThumbnail(
+  db: WorkerClient,
+  video: { id: string; org_id: string; title: string },
+  firstImage: string | undefined,
+  spec: { thumbnail: { width: number; height: number } },
+  workDir: string,
+): Promise<string | null> {
+  if (!firstImage) return null
+
+  try {
+    const lines = thumbnailLines(video.title)
+    if (lines.length === 0) return null
+
+    const assPath = join(workDir, 'cover.ass')
+    await writeFile(assPath, buildThumbnailAss(lines, spec.thumbnail), 'utf8')
+
+    const coverPath = join(workDir, 'cover.jpg')
+    await run(
+      'ffmpeg',
+      buildThumbnailCommand({
+        imagePath: firstImage,
+        assPath,
+        outputPath: coverPath,
+        size: spec.thumbnail,
+      }),
+      { timeout: 60_000 },
+    )
+
+    const path = `${video.org_id}/${video.id}.jpg`
+    const { error } = await db.storage.from('videos').upload(path, await readFile(coverPath), {
+      contentType: 'image/jpeg',
+      upsert: true,
+    })
+
+    if (error) throw new Error(error.message)
+
+    return path
+  } catch (error) {
+    console.warn(`[video_render] ${video.id} ทำปกไม่สำเร็จ (คลิปยังใช้ได้):`, error)
+    return null
+  }
 }

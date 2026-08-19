@@ -27,6 +27,8 @@ export type FormatSpec = {
   /** ระยะซับจากขอบล่าง — คลิปสั้นต้องยกสูงหนีปุ่มไลก์/แชร์กับชื่อคลิปที่ YouTube วางทับ */
   subtitleMarginV: number
   crossfadeSeconds: number
+  /** ขนาดปกคลิป — ยาวใช้ 16:9 ตามช่องปกของ YouTube · สั้นใช้แนวตั้งให้ตรงกับที่ผู้ชมเห็น */
+  thumbnail: { width: number; height: number }
 }
 
 export const FORMATS: Record<VideoFormat, FormatSpec> = {
@@ -41,6 +43,7 @@ export const FORMATS: Record<VideoFormat, FormatSpec> = {
     subtitleFontSize: 22,
     subtitleMarginV: 48,
     crossfadeSeconds: 0.5,
+    thumbnail: { width: 1280, height: 720 },
   },
   short: {
     label: 'คลิปสั้น (9:16)',
@@ -56,6 +59,7 @@ export const FORMATS: Record<VideoFormat, FormatSpec> = {
     subtitleMarginV: 420,
     // ตัดเร็วกว่าเพื่อให้จังหวะกระชับ เฟดยาวในคลิป 50 วินาทีกินเวลาไปเปล่า ๆ
     crossfadeSeconds: 0.25,
+    thumbnail: { width: 1080, height: 1920 },
   },
 }
 

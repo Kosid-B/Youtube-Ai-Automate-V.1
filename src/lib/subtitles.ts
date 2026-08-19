@@ -1,3 +1,5 @@
+import { wrapByGraphemes } from '@/lib/thai-text'
+
 /**
  * สร้างซับไตเติลจากฉากและความยาวเสียงจริง
  *
@@ -46,28 +48,14 @@ export function cuesFromScene(
   return cues
 }
 
-/** ตัดที่ช่องว่างเสมอ ไม่ตัดกลางคำไทย */
+/** ตัดที่ช่องว่างถ้ามี · ภาษาไทยมักไม่มี จึงยอมตัดกลางคำได้ แต่ห้ามตัดกลางตัวอักษร */
 function splitForReading(text: string, maxChars: number): string[] {
-  const clean = text.replace(/\s+/g, ' ').trim()
-  if (clean.length === 0) return []
-  if (clean.length <= maxChars) return [clean]
-
-  const parts: string[] = []
-  let rest = clean
-
-  while (rest.length > maxChars) {
-    const window = rest.slice(0, maxChars)
-    const cut = window.lastIndexOf(' ')
-    const at = cut > maxChars / 3 ? cut : maxChars
-
-    parts.push(rest.slice(0, at).trim())
-    rest = rest.slice(at).trim()
-  }
-
-  if (rest.length > 0) parts.push(rest)
-  return parts
+  // ตัดตามตัวที่มองเห็น ไม่ใช่ตามดัชนีสตริง — .slice() แยกสระออกจากพยัญชนะ
+  // ทำให้ซับบรรทัดใหม่ขึ้นต้นด้วยวรรณยุกต์ลอย (ดู lib/thai-text.ts)
+  return wrapByGraphemes(text, maxChars)
 }
 
+/** ปัดเวลาเป็นมิลลิวินาที — SRT ละเอียดกว่านี้ไม่ได้ */
 function round(seconds: number): number {
   return Math.round(seconds * 1000) / 1000
 }

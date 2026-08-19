@@ -106,6 +106,7 @@ export type VideoRow = {
   description: string | null
   status: VideoStatus
   storage_path: string | null
+  thumbnail_path: string | null
   youtube_video_id: string | null
   publish_at: string | null
   published_at: string | null

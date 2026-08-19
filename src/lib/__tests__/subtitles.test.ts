@@ -1,3 +1,4 @@
+import { visibleLength } from '@/lib/thai-text'
 import { describe, expect, it } from 'vitest'
 import { buildCues, cuesFromScene, toSrt } from '@/lib/subtitles'
 
@@ -24,7 +25,9 @@ describe('cuesFromScene', () => {
 
   it('ไม่เกินความยาวต่อคำบรรยายที่กำหนด', () => {
     const cues = cuesFromScene('คำ '.repeat(100), 0, 60, 42)
-    expect(cues.every((c) => c.text.length <= 42)).toBe(true)
+    // วัดด้วยตัวที่มองเห็น ไม่ใช่ .length — ภาษาไทยมีสระที่ไม่กินความกว้าง
+    // เกณฑ์ที่ตั้งไว้คือ "อ่านทันไหม" ซึ่งขึ้นกับสิ่งที่ตาเห็น ไม่ใช่จำนวน code unit
+    expect(cues.every((cue) => visibleLength(cue.text) <= 42)).toBe(true)
   })
 
   it('ข้อความว่างได้ผลลัพธ์ว่าง', () => {
