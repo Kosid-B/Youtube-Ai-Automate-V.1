@@ -26,6 +26,11 @@ export interface ScriptBrief {
   recentTitles: string[]
   /** โน้ตเพิ่มเติมจากผู้ใช้ */
   brief?: string
+  /**
+   * สิ่งที่เรียนรู้จากคลิปที่วัดผลแล้วของช่องนี้ (จาก lib/content-feedback)
+   * null = ข้อมูลยังไม่พอ ห้ามใส่อะไรเข้า prompt เลย ปล่อยให้โมเดลตัดสินเอง
+   */
+  performanceNote?: string | null
 }
 
 export interface GeneratedScript {
@@ -87,6 +92,8 @@ export async function generateScript(brief: ScriptBrief): Promise<GeneratedScrip
           brief.angle ? `มุมที่อยากเล่า: ${brief.angle}` : null,
           brief.brief ? `โน้ตเพิ่มเติม: ${brief.brief}` : null,
           recent,
+          // ท้ายสุดเพราะเป็นแนวทาง ไม่ใช่โจทย์ — หัวข้อกับมุมที่ผู้ใช้สั่งต้องมาก่อน
+          brief.performanceNote ? `\n\nสิ่งที่ช่องนี้เรียนรู้มา:\n${brief.performanceNote}` : null,
         ]
           .filter(Boolean)
           .join('\n'),

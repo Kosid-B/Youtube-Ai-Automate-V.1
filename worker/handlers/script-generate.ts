@@ -1,6 +1,7 @@
 import type { WorkerClient } from '../supabase'
 import type { JobPayloads } from '@/lib/jobs'
 import { generateScript } from '@/lib/anthropic'
+import { buildGuidance, guidanceText } from '@/lib/content-feedback'
 import { checkOriginality, SIMILARITY_BLOCK } from '@/lib/originality'
 import type { Json } from '@/lib/database.types'
 
@@ -51,6 +52,28 @@ export async function scriptGenerate(
     .neq('id', script.id)
     .order('created_at', { ascending: false })
     .limit(20)
+
+  /**
+   * ป้อนผลงานที่ผ่านมากลับเข้า prompt
+   *
+   * ล้มตรงนี้ไม่ควรทำให้เขียนสคริปต์ไม่ได้ — มันเป็นแค่แนวทางเสริม
+   * ถ้าดึงไม่ได้ก็เขียนแบบไม่มีข้อมูลไปก่อน ดีกว่าไม่ได้สคริปต์เลย
+   */
+  let performanceNote: string | null = null
+
+  try {
+    const [{ data: summary }, { count: clipsMade }] = await Promise.all([
+      db.rpc('content_feature_summary', { p_org_id: script.org_id, p_feature: 'hook_type' }),
+      db
+        .from('videos')
+        .select('id', { count: 'exact', head: true })
+        .eq('channel_id', script.channel_id),
+    ])
+
+    performanceNote = guidanceText(buildGuidance(summary ?? [], clipsMade ?? 0))
+  } catch (error) {
+    console.warn('[script_generate] ดึงผลงานที่ผ่านมาไม่ได้ เขียนต่อโดยไม่ใช้:', error)
+  }
 
   const generated = await generateScript({
     channelName: channel.name,
