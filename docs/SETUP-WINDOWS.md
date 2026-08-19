@@ -138,6 +138,15 @@ pnpm dlx supabase db push        # apply migration ทั้ง 7 ไฟล์
 pnpm db:types                    # ทับ database.types.ts ด้วยของจริง
 ```
 
+> 🛑 **ตอน `db push` ถามยืนยัน ให้อ่านรายชื่อไฟล์ก่อนกด Yes**
+> ต้องเห็นแค่ **7 ไฟล์** ที่ขึ้นต้นด้วย `2026081609...` / `2026081610...`
+> ถ้าเห็น `0001_init.sql` หรือรายการยาวเป็นสิบ ๆ ไฟล์ = **กำลังจะลงผิดโปรเจค กด No ทันที**
+>
+> สาเหตุ: Supabase CLI หา `config.toml` โดยไต่ขึ้นไปทีละชั้น ถ้าไฟล์
+> `yt-factory/supabase/config.toml` หายไป มันจะไปเจอของที่รากโปรเจค
+> (CEO AI Thailand) แล้ว push migration ของโปรเจคนั้นแทน
+> ตรวจว่ามีไฟล์นั้นอยู่: `Get-Content supabase\config.toml`
+
 > `src/lib/database.types.ts` ตอนนี้เขียนมือไว้ให้ typecheck ผ่านก่อนลิงก์ Supabase
 > หลัง `pnpm db:types` ให้ commit ไฟล์ที่ได้ไปด้วย
 >
