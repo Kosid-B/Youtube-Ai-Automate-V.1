@@ -118,9 +118,12 @@ export function buildFfmpegCommand(plan: RenderPlan, options: FfmpegOptions): Ff
   const { canvas, clips, audio, crossfadeSeconds } = plan
 
   if (clips.length === 0) throw new Error('ไม่มีภาพให้ประกอบ')
-  if (audio.length !== clips.length) {
-    throw new Error(`จำนวนภาพ (${clips.length}) ไม่ตรงกับไฟล์เสียง (${audio.length})`)
-  }
+  if (audio.length === 0) throw new Error('ไม่มีเสียงให้ประกอบ')
+  /**
+   * จำนวนภาพกับจำนวนไฟล์เสียง "ไม่จำเป็นต้องเท่ากัน" — ภาพหนึ่งใบครอบได้หลายฉาก
+   * (ดู lib/shots.ts) ที่ต้องเท่ากันคือจำนวนภาพกับจำนวนช็อต ซึ่ง buildRenderPlan ตรวจไปแล้ว
+   * ตรงนี้จึงเหลือแค่ต้องมีทั้งสองอย่าง — เคยเขียนบังคับให้เท่ากัน ซึ่งผูกภาพติดกับฉากโดยไม่จำเป็น
+   */
 
   const args: string[] = ['-y']
 

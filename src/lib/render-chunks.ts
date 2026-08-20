@@ -12,9 +12,11 @@
  *    ในคำสั่งเดียว ซึ่งชนเพดาน file descriptor และกินแรมจน ffmpeg ตายก่อนถึง timeout ด้วยซ้ำ
  *
  * ⚠️ สิ่งที่เสียไปจากการแบ่ง: รอยต่อระหว่างช่วงเป็น "ตัดตรง" ไม่มีเฟดข้าม
- * (ฉากสุดท้ายของช่วงไม่มีหางให้ฉากแรกของช่วงถัดไปทับ) — ยอมรับได้เพราะรอยต่อ
- * ห่างกัน 6 นาที และตัดที่จบประโยคพอดีอยู่แล้ว แต่ต้องรู้ไว้ว่าเป็นผลจากการแบ่ง
+ * (ช็อตสุดท้ายของช่วงไม่มีหางให้ช็อตแรกของช่วงถัดไปทับ) — ยอมรับได้เพราะรอยต่อ
+ * ห่างกัน 6 นาที และไปตกที่จุดเปลี่ยนภาพพอดีอยู่แล้ว แต่ต้องรู้ว่าเป็นผลจากการแบ่ง
  */
+
+import { groupByDuration, type Group } from '@/lib/grouping'
 
 /**
  * ความยาวที่ตั้งใจต่อหนึ่งช่วง
@@ -28,47 +30,24 @@
  */
 export const CHUNK_TARGET_SECONDS = 360
 
-export type Chunk = {
-  /** ดัชนีฉากเริ่มต้น (รวม) */
-  start: number
-  /** ดัชนีฉากสุดท้าย (ไม่รวม) */
-  end: number
-  seconds: number
-}
+/** ดัชนีที่ Chunk อ้างถึงคือ "ช็อต" ไม่ใช่ฉาก — ดู planChunks */
+export type Chunk = Group
 
 /**
- * จัดฉากเข้าช่วง โดยไม่ตัดกลางฉาก
+ * จัดช็อตเข้าช่วงเรนเดอร์ โดยไม่ตัดกลางช็อต
  *
- * ตัดกลางฉากไม่ได้เด็ดขาด เพราะหนึ่งฉาก = ภาพหนึ่งใบ + ไฟล์เสียงหนึ่งไฟล์ที่ต้องเล่นจบ
- * แบ่งกลางแล้วเสียงจะขาดตรงรอยต่อ ซึ่งได้ยินชัดกว่าภาพที่ตัดตรงมาก
+ * ⚠️ รับความยาวของ "ช็อต" ไม่ใช่ของฉาก — จงใจ
+ * ถ้าแบ่งช่วงที่ระดับฉาก รอยต่อของช่วงจะไปตกกลางช็อตได้ แปลว่าภาพใบเดียวกัน
+ * ถูกตัดเป็นสองไฟล์แล้ว Ken Burns เริ่มใหม่ตรงรอยต่อ — เห็นเป็นภาพกระตุกรีเซ็ต
+ * แบ่งที่ระดับช็อตจึงได้รอยต่อที่ตรงกับจุดเปลี่ยนภาพพอดีเสมอ
  *
- * ฉากที่ยาวเกินเป้าเองก็ยังต้องได้อยู่ในช่วงของตัวเอง — ช่วงจึงยาวเกินเป้าได้
- * ดีกว่าทิ้งฉากหรือแบ่งจนเสียงขาด
+ * ช็อตที่ยาวเกินเป้าเองก็ยังต้องได้อยู่ในช่วงของตัวเอง — ช่วงจึงยาวเกินเป้าได้
  */
 export function planChunks(
-  durationsSec: number[],
+  shotSeconds: number[],
   targetSeconds: number = CHUNK_TARGET_SECONDS,
 ): Chunk[] {
-  if (durationsSec.length === 0) return []
-
-  const chunks: Chunk[] = []
-  let start = 0
-  let seconds = 0
-
-  durationsSec.forEach((duration, i) => {
-    // ปิดช่วงก่อนใส่ฉากนี้ ถ้าใส่แล้วจะเกินเป้า และช่วงปัจจุบันมีของอยู่แล้ว
-    if (seconds > 0 && seconds + duration > targetSeconds) {
-      chunks.push({ start, end: i, seconds: round(seconds) })
-      start = i
-      seconds = 0
-    }
-
-    seconds += duration
-  })
-
-  chunks.push({ start, end: durationsSec.length, seconds: round(seconds) })
-
-  return chunks
+  return groupByDuration(shotSeconds, targetSeconds)
 }
 
 /**
@@ -82,8 +61,4 @@ export function planChunks(
  */
 export function concatListFile(paths: string[]): string {
   return paths.map((path) => `file '${path.replace(/'/g, "'\\''")}'`).join('\n') + '\n'
-}
-
-function round(seconds: number): number {
-  return Math.round(seconds * 1000) / 1000
 }

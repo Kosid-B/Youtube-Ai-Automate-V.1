@@ -411,4 +411,97 @@ describe.skipIf(!hasFfmpeg)('เรนเดอร์จริงด้วย ff
     },
     180_000,
   )
+
+  /**
+   * ภาพหนึ่งใบครอบหลายฉาก — เส้นทางของช่องเล่าเรื่องยาว
+   *
+   * จับสองอย่าง:
+   * 1. ภาพต้อง "ค้าง" ตลอดช็อต ไม่ใช่ตัดตามฉากเหมือนเดิม → วัดสีของแถบบน
+   *    (พ้นบริเวณซับ) สองจุดในช็อตเดียวกันต้องเป็นสีเดียวกัน และข้ามช็อตต้องเปลี่ยนสี
+   * 2. ซับต้อง "เปลี่ยนอยู่" ใต้ภาพที่ค้างนั้น → เทียบพิกเซลแถบซับสองจุดในช็อตเดียวกัน
+   *    ถ้าเหมือนกันเป๊ะแปลว่าเราไปผูกซับติดกับภาพโดยไม่ตั้งใจ ซึ่งทำให้เสียทั้งจุดประสงค์
+   */
+  it(
+    'ภาพเดียวครอบหลายฉาก ภาพต้องค้าง แต่ซับต้องเปลี่ยนอยู่ข้างใต้',
+    () => {
+      const dir = join(workDir, 'shots')
+      mkdirSync(dir, { recursive: true })
+
+      const four = splitIntoScenes(
+        ['ฉากหนึ่งพูดเรื่องแรก', 'ฉากสองพูดเรื่องต่อมา', 'ฉากสามเปลี่ยนภาพแล้ว', 'ฉากสี่ปิดท้าย']
+          .join('\n'),
+        { targetChars: 24, maxChars: 30 },
+      )
+      expect(four).toHaveLength(4)
+      const secs = [3, 3, 3, 3]
+
+      // ภาพสองใบสีต่างกันชัด เพื่อดูด้วยค่าพิกเซลว่าภาพเปลี่ยนตอนไหน
+      const colors = ['0x400000', '0x000040']
+      const imgs = colors.map((c, i) => {
+        const path = join(dir, `c${i}.png`)
+        execFileSync('ffmpeg', [
+          '-y', '-f', 'lavfi', '-i', `color=c=${c}:s=640x360`, '-frames:v', '1', path,
+        ], { stdio: 'ignore' })
+        return path
+      })
+      const sounds = secs.map((sec, i) => {
+        const path = join(dir, `s${i}.wav`)
+        execFileSync('ffmpeg', [
+          '-y', '-f', 'lavfi', '-i', `sine=frequency=440:duration=${sec}`,
+          '-ar', '24000', '-ac', '1', path,
+        ], { stdio: 'ignore' })
+        return path
+      })
+
+      // 2 ช็อต ช็อตละ 2 ฉาก → ภาพเปลี่ยนที่วินาทีที่ 6 ไม่ใช่ทุก 3 วินาที
+      const plan = buildRenderPlan({
+        scenes: four,
+        durationsSec: secs,
+        imagePaths: imgs,
+        sceneCounts: [2, 2],
+        audioPaths: sounds,
+        canvas: { width: 640, height: 360, fps: 24 },
+        crossfadeSeconds: 0.5,
+      })
+      expect(plan.clips).toHaveLength(2)
+      expect(plan.totalSeconds).toBe(12)
+
+      const srtPath = join(dir, 'sub.srt')
+      writeFileSync(srtPath, toSrt(plan.subtitles), 'utf8')
+
+      const outputPath = join(dir, 'shots.mp4')
+      execFileSync(
+        'ffmpeg',
+        buildFfmpegCommand(plan, { subtitlePath: srtPath, outputPath, fontSize: 20 }).args,
+        { stdio: 'pipe' },
+      )
+
+      const cropAt = (seconds: number, crop: string) =>
+        execFileSync('ffmpeg', [
+          '-v', 'quiet', '-ss', String(seconds), '-i', outputPath, '-frames:v', '1',
+          '-vf', `crop=${crop}`, '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-',
+        ], { maxBuffer: 10 * 1024 * 1024 })
+
+      // แถบบนสุด พ้นบริเวณซับ — ใช้ดูว่าภาพเปลี่ยนตอนไหน
+      const avg = (buf: Buffer, offset: number) => {
+        let sum = 0
+        for (let i = offset; i < buf.length; i += 3) sum += buf[i]
+        return sum / (buf.length / 3)
+      }
+      const topA = cropAt(1, '640:60:0:0')   // ฉาก 1 · ช็อต 1
+      const topB = cropAt(4.5, '640:60:0:0') // ฉาก 2 · ช็อต 1 (ภาพเดียวกัน)
+      const topC = cropAt(10, '640:60:0:0')  // ฉาก 4 · ช็อต 2 (คนละภาพ)
+
+      // ช็อต 1 เป็นภาพแดง (R เด่น) · ช็อต 2 เป็นภาพน้ำเงิน (B เด่น)
+      expect(avg(topA, 0)).toBeGreaterThan(avg(topA, 2))
+      expect(avg(topB, 0)).toBeGreaterThan(avg(topB, 2))
+      expect(avg(topC, 2)).toBeGreaterThan(avg(topC, 0))
+
+      // แถบซับ — สองจุดในช็อตเดียวกันต้องเป็นคนละข้อความ
+      const subA = cropAt(1, '640:100:0:260')
+      const subB = cropAt(4.5, '640:100:0:260')
+      expect(Buffer.compare(subA, subB)).not.toBe(0)
+    },
+    180_000,
+  )
 })

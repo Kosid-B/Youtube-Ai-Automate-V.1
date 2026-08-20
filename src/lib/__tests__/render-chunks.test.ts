@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { CHUNK_TARGET_SECONDS, concatListFile, planChunks } from '@/lib/render-chunks'
 
+// planChunks รับความยาวของ "ช็อต" ไม่ใช่ของฉาก — รอยต่อของช่วงจะได้ตรงกับจุดเปลี่ยนภาพ
 describe('planChunks', () => {
   it('คลิปสั้นกว่าเป้าต้องได้ช่วงเดียว — ไม่ต้องต่อไฟล์โดยไม่จำเป็น', () => {
     const chunks = planChunks([10, 10, 10], 360)
@@ -8,7 +9,7 @@ describe('planChunks', () => {
   })
 
   it('ต้องปิดช่วงก่อนเกินเป้า ไม่ใช่หลังเกิน', () => {
-    // 100+100+100 = 300 พอดี · ฉากที่สี่จะทำให้เป็น 400 จึงต้องขึ้นช่วงใหม่
+    // 100+100+100 = 300 พอดี · ช็อตที่สี่จะทำให้เป็น 400 จึงต้องขึ้นช่วงใหม่
     const chunks = planChunks([100, 100, 100, 100], 300)
     expect(chunks).toEqual([
       { start: 0, end: 3, seconds: 300 },
@@ -17,15 +18,15 @@ describe('planChunks', () => {
   })
 
   /**
-   * ข้อสำคัญที่สุด — ตัดกลางฉากแล้วเสียงจะขาดตรงรอยต่อ ซึ่งได้ยินชัดกว่าภาพที่ตัดตรงมาก
-   * ฉากยาวเกินเป้าจึงต้องได้อยู่ช่วงของตัวเอง ไม่ใช่ถูกหั่น
+   * ตัดกลางช็อตไม่ได้ — ภาพใบเดียวจะถูกแบ่งเป็นสองไฟล์ แล้ว Ken Burns เริ่มใหม่
+   * ตรงรอยต่อ เห็นเป็นภาพกระตุกรีเซ็ต · ช็อตยาวเกินเป้าจึงต้องได้อยู่ช่วงของตัวเอง
    */
-  it('ฉากที่ยาวเกินเป้าต้องอยู่ครบในช่วงเดียว ไม่ถูกหั่น', () => {
+  it('ช็อตที่ยาวเกินเป้าต้องอยู่ครบในช่วงเดียว ไม่ถูกหั่น', () => {
     const chunks = planChunks([500], 300)
     expect(chunks).toEqual([{ start: 0, end: 1, seconds: 500 }])
   })
 
-  it('ทุกฉากต้องถูกนับ ไม่มีตกหล่นและไม่ซ้ำ', () => {
+  it('ทุกช็อตต้องถูกนับ ไม่มีตกหล่นและไม่ซ้ำ', () => {
     const durations = Array.from({ length: 187 }, (_, i) => 8 + (i % 13))
     const chunks = planChunks(durations, CHUNK_TARGET_SECONDS)
 
@@ -42,14 +43,15 @@ describe('planChunks', () => {
 
   /** คลิป 45 นาทีต้องถูกแบ่งจริง ไม่ใช่หลุดออกมาเป็นก้อนเดียวแล้วไป timeout ทีหลัง */
   it('คลิป 45 นาทีต้องแบ่งได้หลายช่วง และไม่มีช่วงไหนเกินเพดาน worker', () => {
-    const durations = Array.from({ length: 180 }, () => 15)
+    // 45 ช็อต ช็อตละ 60 วินาที = 45 นาที
+    const durations = Array.from({ length: 45 }, () => 60)
     const chunks = planChunks(durations)
 
     expect(chunks.length).toBeGreaterThan(6)
     chunks.forEach((chunk) => expect(chunk.seconds).toBeLessThanOrEqual(CHUNK_TARGET_SECONDS))
   })
 
-  it('ไม่มีฉากเลยต้องได้ช่วงว่าง ไม่ใช่ช่วงที่ไม่มีฉาก', () => {
+  it('ไม่มีช็อตเลยต้องได้ช่วงว่าง ไม่ใช่ช่วงที่ไม่มีอะไร', () => {
     expect(planChunks([])).toEqual([])
   })
 })

@@ -12,6 +12,7 @@ import { buildConcatCommand, buildFfmpegCommand } from '@/lib/ffmpeg'
 import { creditBlock, downloadPhoto, pickPhoto, searchPhotos, type PexelsPhoto } from '@/lib/pexels'
 import { buildRenderPlan } from '@/lib/render-plan'
 import { concatListFile, planChunks } from '@/lib/render-chunks'
+import { planShots, shotSceneCounts, shotText, type Shot } from '@/lib/shots'
 import { splitIntoScenes, type Scene } from '@/lib/scenes'
 import { formatSpec, formatWarning, minPhotoSize } from '@/lib/formats'
 import { buildDescription, chapterBlock, ctaWarning } from '@/lib/description'
@@ -104,19 +105,31 @@ export async function videoRender(
   const workDir = await mkdtemp(join(tmpdir(), `ytf-${video.id}-`))
 
   try {
+    /**
+     * เสียงมาก่อนภาพ เพราะการแบ่งช็อตต้องใช้ "ความยาวเสียงจริง"
+     * ประมาณจากจำนวนตัวอักษรไม่ได้ — ช็อตจะยาวไม่เท่าที่ตั้งใจแล้วโควตาภาพเพี้ยนตาม
+     */
+    const audio = await collectAudio(scenes, workDir)
+
+    /**
+     * แยกจังหวะภาพออกจากจังหวะเสียง — ภาพหนึ่งใบครอบหลายฉาก (ดู lib/shots.ts)
+     * คลิปสั้นตั้ง shotSeconds ไว้สั้นกว่าหนึ่งฉาก จึงได้ภาพต่อฉากเหมือนเดิมทุกประการ
+     */
+    const shots = planShots(audio.durations, spec.shotSeconds)
+
     const images = await collectImages(
-      db, video, scenes, channel?.niche ?? null, workDir,
+      db, video, scenes, shots, channel?.niche ?? null, workDir,
       spec.orientation, minPhotoSize(video.format),
     )
-    const audio = await collectAudio(scenes, workDir)
 
     /**
      * เรนเดอร์ทีละช่วงแล้วต่อกัน — คำสั่งเดียวรวดเดียวใช้ไม่ได้กับคลิปยาว
      * (ทั้งชนเพดานเวลาและเปิดไฟล์เข้าพร้อมกันเยอะเกิน · ดู lib/render-chunks.ts)
      *
-     * คลิปสั้นได้ช่วงเดียว = พฤติกรรมเดิมทุกประการ ไม่มีการต่อไฟล์
+     * แบ่งที่ระดับ "ช็อต" ไม่ใช่ฉาก เพื่อให้รอยต่อของช่วงตรงกับจุดเปลี่ยนภาพพอดี
+     * ไม่งั้นภาพใบเดียวถูกตัดเป็นสองไฟล์แล้ว Ken Burns เริ่มใหม่ตรงรอยต่อ
      */
-    const chunks = planChunks(audio.durations)
+    const chunks = planChunks(shots.map((shot) => shot.seconds))
     const totalSeconds = round(chunks.reduce((sum, chunk) => sum + chunk.seconds, 0))
 
     // คลิปสั้นที่ยาวเกิน 3 นาทีจะไม่ถูกนับเป็น Short — เสียเหตุผลเดียวที่ทำคลิปสั้น
@@ -125,7 +138,8 @@ export async function videoRender(
     if (warning) console.warn(`[video_render] ${video.id} ⚠️ ${warning}`)
 
     console.log(
-      `[video_render] ${video.id} เริ่มประกอบ ${scenes.length} ฉาก ${totalSeconds}s` +
+      `[video_render] ${video.id} เริ่มประกอบ ${scenes.length} ฉาก ` +
+        `${images.paths.length} ภาพ ${totalSeconds}s` +
         (chunks.length > 1 ? ` แบ่ง ${chunks.length} ช่วง` : ''),
     )
 
@@ -133,13 +147,19 @@ export async function videoRender(
 
     for (let i = 0; i < chunks.length; i += 1) {
       const chunk = chunks[i]
-      const slice = <T,>(items: T[]) => items.slice(chunk.start, chunk.end)
+
+      // chunk อ้างดัชนี "ช็อต" ต้องแปลงกลับเป็นช่วงฉากก่อนจึงจะหั่นเสียง/ซับได้
+      const chunkShots = shots.slice(chunk.start, chunk.end)
+      const sceneFrom = chunkShots[0].start
+      const sceneTo = chunkShots[chunkShots.length - 1].end
+      const scenesOf = <T,>(items: T[]) => items.slice(sceneFrom, sceneTo)
 
       const plan = buildRenderPlan({
-        scenes: slice(scenes),
-        durationsSec: slice(audio.durations),
-        imagePaths: slice(images.paths),
-        audioPaths: slice(audio.paths),
+        scenes: scenesOf(scenes),
+        durationsSec: scenesOf(audio.durations),
+        audioPaths: scenesOf(audio.paths),
+        imagePaths: images.paths.slice(chunk.start, chunk.end),
+        sceneCounts: shotSceneCounts(chunkShots),
         canvas: spec.canvas,
         crossfadeSeconds: spec.crossfadeSeconds,
       })
@@ -209,6 +229,7 @@ export async function videoRender(
       scenes: scenes.length,
       // เก็บจำนวนช่วงไว้ดูว่าการแบ่งเกิดขึ้นจริงบ่อยแค่ไหน และคุ้มกับรอยต่อที่เสียไปไหม
       chunks: chunks.length,
+      shots: shots.length,
       seconds: totalSeconds,
       images: images.paths.length,
     })
@@ -232,10 +253,18 @@ type CollectedImages = {
   credits: { photographer: string; sourceUrl: string }[]
 }
 
+/**
+ * หาภาพ "ใบละช็อต" ไม่ใช่ใบละฉาก
+ *
+ * `video_assets.scene_index` เก็บ "ฉากแรกของช็อต" ต่อไป ไม่ใช่ดัชนีช็อต —
+ * ตั้งใจ เพราะเป็นเลขที่ยังชี้กลับไปหาฉากจริงได้ และของเดิมที่บันทึกไว้แล้ว
+ * (ตอนที่ช็อตละฉาก) ยังใช้ต่อได้โดยไม่ต้องย้ายข้อมูล
+ */
 async function collectImages(
   db: WorkerClient,
   video: { id: string; org_id: string; title: string },
   scenes: Scene[],
+  shots: Shot[],
   niche: string | null,
   workDir: string,
   /** คลิปแนวตั้งต้องขอภาพแนวตั้ง ไม่งั้น crop ทิ้งเกือบทั้งภาพ */
@@ -250,7 +279,16 @@ async function collectImages(
 
   const known = new Map((existing ?? []).map((row) => [row.scene_index, row]))
 
-  const missing = scenes.filter((scene) => !known.has(scene.index))
+  /**
+   * หนึ่งช็อตต่อหนึ่งภาพ — คำค้นต้องมาจากข้อความของทุกฉากในช็อต ไม่ใช่ฉากแรกฉากเดียว
+   * เพราะภาพใบนี้ต้องอยู่ให้ครบทั้งช็อต (นานถึงหนึ่งนาทีในคลิปยาวพิเศษ)
+   */
+  const shotScenes = shots.map((shot) => ({
+    index: scenes[shot.start].index,
+    text: shotText(scenes, shot),
+  }))
+
+  const missing = shotScenes.filter((shot) => !known.has(shot.index))
   const queries = new Map<number, string>()
 
   if (missing.length > 0) {
@@ -262,7 +300,7 @@ async function collectImages(
   const credits: CollectedImages['credits'] = []
   const usedIds = new Set<number>((existing ?? []).map((row) => Number(row.provider_id)))
 
-  for (const scene of scenes) {
+  for (const scene of shotScenes) {
     const cached = known.get(scene.index)
     const query = cached?.query ?? queries.get(scene.index) ?? 'abstract background'
 
@@ -281,7 +319,7 @@ async function collectImages(
         photo = pickPhoto(fallback.photos, { usedIds, ...minSize })
       }
 
-      if (!photo) throw new Error(`หาภาพให้ฉาก ${scene.index} ไม่ได้ (คำค้น "${query}")`)
+      if (!photo) throw new Error(`หาภาพให้ช็อตที่เริ่มฉาก ${scene.index} ไม่ได้ (คำค้น "${query}")`)
       usedIds.add(photo.id)
 
       const { error } = await db.from('video_assets').insert({
@@ -304,7 +342,7 @@ async function collectImages(
     credits.push({ photographer, sourceUrl })
 
     // ไฟล์อยู่ในไดเรกทอรีชั่วคราวที่ถูกลบทุกรอบ จึงต้องโหลดใหม่เสมอแม้จะเคยบันทึกไว้แล้ว
-    const imagePath = join(workDir, `scene-${scene.index}.jpg`)
+    const imagePath = join(workDir, `shot-${pad(scene.index)}.jpg`)
     const bytes = photo
       ? await downloadPhoto(photo)
       : await downloadFromSourceId(cached!.provider_id)

@@ -78,6 +78,57 @@ describe('buildRenderPlan', () => {
   })
 })
 
+describe('buildRenderPlan — ภาพหนึ่งใบครอบหลายฉาก', () => {
+  /**
+   * หัวใจของการแยกจังหวะภาพออกจากจังหวะเสียง:
+   * เสียงยังเป็นท่อนละฉากเหมือนเดิม แต่ภาพยืดคลุมทุกฉากในช็อต
+   */
+  it('ภาพต้องยืดคลุมทุกฉากในช็อต ส่วนเสียงยังเป็นท่อนละฉาก', () => {
+    const result = plan({ imagePaths: ['a.jpg'], sceneCounts: [3] })
+
+    expect(result.clips).toHaveLength(1)
+    expect(result.audio).toHaveLength(3)
+    // ฉาก 4+6+5 = 15 วินาที · ช็อตเดียวไม่มีหางเฟดเพราะไม่มีช็อตถัดไป
+    expect(result.clips[0].startSec).toBe(0)
+    expect(result.clips[0].endSec).toBe(15)
+    expect(result.totalSeconds).toBe(15)
+  })
+
+  it('ช็อตถัดไปต้องเริ่มตรงที่ช็อตก่อนหน้าจบ และช็อตแรกมีหางไว้ให้เฟดทับ', () => {
+    const result = plan({ imagePaths: ['a.jpg', 'b.jpg'], sceneCounts: [2, 1] })
+
+    expect(result.clips[0].startSec).toBe(0)
+    expect(result.clips[0].endSec).toBe(10 + CROSSFADE_SECONDS) // 4+6 บวกหาง
+    expect(result.clips[1].startSec).toBe(10)
+    expect(result.clips[1].endSec).toBe(15) // ช็อตสุดท้ายไม่มีหาง
+    expect(result.totalSeconds).toBe(15)
+  })
+
+  it('ซับยังนับตามฉาก ไม่ใช่ตามภาพ — คนอ่านซับตามที่พูด ไม่ใช่ตามที่ภาพเปลี่ยน', () => {
+    const result = plan({ imagePaths: ['a.jpg'], sceneCounts: [3] })
+    expect(result.subtitles.length).toBeGreaterThanOrEqual(3)
+  })
+
+  /**
+   * ผลรวมต้องเท่ากับจำนวนฉากพอดี ไม่ใช่แค่ "ไม่เกิน"
+   * ขาดไปหนึ่ง = ฉากท้ายไม่มีภาพคลุม คลิปจบด้วยจอดำที่ยังมีเสียงพูดอยู่
+   */
+  it('ช็อตครอบฉากไม่ครบต้องล้ม ไม่ใช่ปล่อยให้ฉากท้ายไม่มีภาพ', () => {
+    expect(() => plan({ imagePaths: ['a.jpg'], sceneCounts: [2] })).toThrow(/ครอบ 2 ฉาก/)
+    expect(() => plan({ imagePaths: ['a.jpg'], sceneCounts: [4] })).toThrow(/ครอบ 4 ฉาก/)
+  })
+
+  it('จำนวนภาพไม่ตรงกับจำนวนช็อตต้องล้ม', () => {
+    expect(() => plan({ imagePaths: ['a.jpg'], sceneCounts: [1, 2] })).toThrow(/ไม่ตรงกับจำนวนภาพ/)
+  })
+
+  it('ไม่ระบุ sceneCounts ต้องได้ภาพต่อฉากเหมือนเดิม', () => {
+    const result = plan()
+    expect(result.clips).toHaveLength(scenes.length)
+    expect(result.clips.map((c) => c.imagePath)).toEqual(images)
+  })
+})
+
 describe('kenBurnsFor', () => {
   it('สลับซูมเข้าซูมออก ไม่ให้ทุกฉากขยับเหมือนกัน', () => {
     expect(kenBurnsFor(0).zoomFrom).toBeLessThan(kenBurnsFor(0).zoomTo)

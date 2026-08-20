@@ -179,7 +179,7 @@ pnpm worker
 ## 8. ตรวจว่าทุกอย่างพร้อม
 
 ```powershell
-pnpm test        # 204 เทส
+pnpm test        # เทสต์ทั้งชุด
 pnpm typecheck
 pnpm lint
 ```

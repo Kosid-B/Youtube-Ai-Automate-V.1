@@ -25,6 +25,11 @@ export type FormatSpec = {
   targetSeconds: number
   /** เกินนี้ = ผิดรูปแบบ (คลิปสั้นเกิน 3 นาทีไม่ถูกนับเป็น Short อีกต่อไป) */
   maxSeconds: number
+  /**
+   * ภาพหนึ่งใบค้างกี่วินาที — คนละเรื่องกับความยาวฉาก (ซึ่งคุมจังหวะเสียงกับซับ)
+   * ตั้งให้สั้นกว่าหนึ่งฉาก = ภาพต่อฉาก เหมือนก่อนแยกภาพออกจากฉาก
+   */
+  shotSeconds: number
   subtitleFontSize: number
   /** ระยะซับจากขอบล่าง — คลิปสั้นต้องยกสูงหนีปุ่มไลก์/แชร์กับชื่อคลิปที่ YouTube วางทับ */
   subtitleMarginV: number
@@ -47,6 +52,8 @@ export const FORMATS: Record<VideoFormat, FormatSpec> = {
     targetSeconds: 480,
     // ยาวเกินนี้คนดูไม่จบ และค่า TTS พุ่งเกินงบ 10 บาท/คลิป
     maxSeconds: 900,
+    // ~3 ฉากต่อภาพ — ช่องสารคดีค้างภาพ 30–90 วินาทีแล้วใช้ Ken Burns ช้า ๆ แทนการตัด
+    shotSeconds: 45,
     subtitleFontSize: 22,
     subtitleMarginV: 48,
     crossfadeSeconds: 0.5,
@@ -61,6 +68,8 @@ export const FORMATS: Record<VideoFormat, FormatSpec> = {
     scenes: { targetChars: 90, maxChars: 140 },
     targetSeconds: 50,
     maxSeconds: 180,
+    // คนเลื่อนผ่านเร็ว ภาพต้องเปลี่ยนถี่ — สั้นกว่าหนึ่งฉากเพื่อให้ได้ภาพต่อฉากเหมือนเดิม
+    shotSeconds: 3,
     // จอสูงเป็นสองเท่า ตัวอักษรต้องโตตาม ไม่งั้นเล็กจนอ่านไม่ทันตอนเลื่อนผ่าน
     subtitleFontSize: 44,
     // YouTube วางชื่อคลิปกับปุ่มทับพื้นที่ล่างของ Shorts — ซับต้องอยู่เหนือแถบนั้น
@@ -80,6 +89,12 @@ export const FORMATS: Record<VideoFormat, FormatSpec> = {
     // (วัดจริง: เรนเดอร์ใช้เวลาราวครึ่งหนึ่งของความยาวคลิปที่ 640x360 · 1080p ช้ากว่านั้นมาก)
     targetSeconds: 2700,
     maxSeconds: 4200,
+    /**
+     * 60 วินาทีต่อภาพ = ~45 ภาพต่อคลิป แทนที่จะเป็น ~180
+     * ไม่ใช่เรื่องความสวยอย่างเดียว — Pexels ให้ 200 คำค้นต่อชั่วโมง
+     * 180 คำค้นเพื่อคลิปเดียวคือกินโควตาเกือบหมดชั่วโมง แล้วพลาดนิดเดียวก็ทะลุ
+     */
+    shotSeconds: 60,
     subtitleFontSize: 22,
     subtitleMarginV: 48,
     crossfadeSeconds: 0.5,
