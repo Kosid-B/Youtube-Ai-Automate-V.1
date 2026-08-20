@@ -99,7 +99,16 @@ export async function videoRender(
   const scenes = splitIntoScenes(script.body, spec.scenes)
   if (scenes.length === 0) throw new Error('แบ่งฉากจากสคริปต์ไม่ได้')
 
-  await db.from('videos').update({ status: 'rendering' }).eq('id', video.id)
+  await db
+    .from('videos')
+    // ล้างตัวนับของรอบก่อนด้วย — retry ต้องไม่ขึ้น "6 จาก 8" ค้างจากรอบที่ล้มไปแล้ว
+    .update({
+      status: 'rendering',
+      render_done: 0,
+      render_total: null,
+      render_started_at: new Date().toISOString(),
+    })
+    .eq('id', video.id)
   await track('render_started', video.org_id, { scenes: scenes.length })
 
   const workDir = await mkdtemp(join(tmpdir(), `ytf-${video.id}-`))
@@ -143,6 +152,9 @@ export async function videoRender(
         (chunks.length > 1 ? ` แบ่ง ${chunks.length} ช่วง` : ''),
     )
 
+    // บอกหน้าจอว่าทั้งหมดมีกี่ช่วง ก่อนจะเริ่มช่วงแรก ไม่งั้นแถบความคืบหน้าไม่มีตัวหาร
+    await db.from('videos').update({ render_total: chunks.length }).eq('id', video.id)
+
     const chunkPaths: string[] = []
 
     for (let i = 0; i < chunks.length; i += 1) {
@@ -179,6 +191,19 @@ export async function videoRender(
 
       await run('ffmpeg', args, { timeout: FFMPEG_TIMEOUT_MS, maxBuffer: 32 * 1024 * 1024 })
       chunkPaths.push(chunkPath)
+
+      /**
+       * รายงานความคืบหน้าทุกช่วง ไม่ใช่เฉพาะตอนแบ่งหลายช่วง
+       * ล้มตรงนี้ต้องไม่ทำให้งานล้ม — เสียตัวเลขบนหน้าจอไปหนึ่งรอบยังพอทน
+       * แต่ throw ออกไปคือทิ้งงานเรนเดอร์ที่ทำมาแล้วครึ่งชั่วโมง
+       */
+      const { error: progressError } = await db
+        .from('videos')
+        .update({ render_done: i + 1 })
+        .eq('id', video.id)
+      if (progressError) {
+        console.warn(`[video_render] อัปเดตความคืบหน้าไม่สำเร็จ: ${progressError.message}`)
+      }
 
       if (chunks.length > 1) {
         console.log(`[video_render] ${video.id} ช่วง ${i + 1}/${chunks.length} เสร็จ (${chunk.seconds}s)`)

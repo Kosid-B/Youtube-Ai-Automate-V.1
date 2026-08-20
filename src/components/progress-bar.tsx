@@ -13,8 +13,17 @@ const FILL_CLASS: Record<Tone, string> = {
  * Goal-Gradient Effect: คนเร่งเข้าหาเป้าหมายมากขึ้นเมื่อเห็นว่าใกล้ถึงแล้ว
  * การบอกว่า "ขั้นที่ 3 จาก 4" จึงมีค่ากว่าการบอกแค่ชื่อสถานะ
  */
-export function ProgressBar({ step, tone }: { step: number; tone: Tone }) {
-  const percent = progressPercent(step)
+export function ProgressBar({
+  step,
+  tone,
+  fraction,
+}: {
+  step: number
+  tone: Tone
+  /** ความคืบหน้าภายในขั้นนี้ (0–1) — มีเฉพาะตอนตัดต่อคลิปที่แบ่งเป็นหลายช่วง */
+  fraction?: number
+}) {
+  const percent = progressPercent(step, fraction)
 
   return (
     <div
@@ -23,6 +32,11 @@ export function ProgressBar({ step, tone }: { step: number; tone: Tone }) {
       aria-valuenow={step}
       aria-valuemin={0}
       aria-valuemax={TOTAL_STEPS}
+      aria-valuetext={
+        fraction === undefined
+          ? undefined
+          : `ขั้นที่ ${step} จาก ${TOTAL_STEPS} · ไปแล้ว ${Math.round(fraction * 100)}%`
+      }
       aria-label={`ขั้นที่ ${step} จาก ${TOTAL_STEPS}`}
     >
       <div className="h-1 w-full overflow-hidden rounded-full bg-surface-2">

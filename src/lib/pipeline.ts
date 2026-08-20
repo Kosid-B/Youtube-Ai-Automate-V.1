@@ -79,14 +79,98 @@ const VIDEO_STAGES: Record<VideoStatus, StageView> = {
   },
 }
 
-export function videoStage(status: VideoStatus): StageView {
-  return VIDEO_STAGES[status]
+export type RenderProgress = {
+  /** ช่วงที่เรนเดอร์เสร็จแล้ว */
+  done: number
+  /** ช่วงทั้งหมด — null = ยังไม่รู้ (worker ยังไม่ได้เริ่ม) */
+  total: number | null
+  startedAt: string | null
 }
 
-/** เปอร์เซ็นต์ความคืบหน้าของแถบ — คลิปที่ยังไม่เริ่มก็ควรเห็นว่ามีอะไรเดินไปแล้วบ้าง */
-export function progressPercent(step: number): number {
+export function videoStage(status: VideoStatus, progress?: RenderProgress): StageView {
+  const stage = VIDEO_STAGES[status]
+
+  // ความคืบหน้าย่อยมีความหมายเฉพาะตอนกำลังตัดต่อ สถานะอื่นไม่ต้องรก
+  if (status !== 'rendering' || !progress) return stage
+
+  const detail = renderDetail(progress)
+  return detail ? { ...stage, detail } : stage
+}
+
+/**
+ * บอกว่าตัดต่อไปถึงไหนแล้ว และอีกนานไหม
+ *
+ * ทำไมต้องมี: คลิปยาวพิเศษใช้เวลาราวครึ่งชั่วโมง ตลอดเวลานั้นข้อความเดิม
+ * ("กำลังประกอบเสียงและภาพ") เหมือนกันหมดตั้งแต่นาทีแรกจนนาทีสุดท้าย
+ * ผู้ใช้จึงแยกไม่ออกว่า "กำลังทำอยู่" กับ "ค้าง" ต่างกันตรงไหน แล้วไปกดสั่งทำใหม่
+ * ทั้งที่ของเดิมยังเดินอยู่ — เสียเงินสองเท่าเพราะหน้าจอไม่ยอมบอก
+ *
+ * Goal-Gradient Effect: เห็นว่าใกล้ถึงแล้วทำให้รอต่อได้ · การบอกว่าเหลืออีกเท่าไร
+ * จึงมีค่ากว่าการบอกว่าทำไปแล้วเท่าไร
+ */
+export function renderDetail(progress: RenderProgress, now: Date = new Date()): string | null {
+  const { done, total } = progress
+
+  // ไม่ได้แบ่งช่วง (คลิปสั้น) = ไม่มีอะไรให้รายงานระหว่างทาง อย่าโชว์ "1 จาก 1"
+  if (total === null || total <= 1) return null
+
+  /**
+   * ครบทุกช่วงแล้วยังไม่จบงาน — เหลือรวมไฟล์กับอัปขึ้นที่เก็บ ซึ่งกินเวลาอีกหลายนาที
+   * ถ้ายังขึ้น "ช่วงที่ 8 จาก 8" ค้างอยู่ ผู้ใช้จะอ่านว่าแขวนตรงช่วงสุดท้าย
+   */
+  if (done >= total) return 'ประกอบครบทุกช่วงแล้ว กำลังรวมไฟล์'
+
+  const base = `กำลังประกอบ ช่วงที่ ${done + 1} จาก ${total}`
+
+  const eta = renderEta(progress, now)
+  return eta ? `${base} · เหลืออีกราว ${eta}` : base
+}
+
+/**
+ * ประมาณเวลาที่เหลือจากเวลาที่ใช้ไปจริงกับช่วงที่ทำเสร็จแล้ว
+ *
+ * ไม่ใช้ค่าคงที่ต่อช่วง เพราะความเร็วเรนเดอร์ต่างกันหลายเท่าตามเครื่องที่รัน worker
+ * (วัดจริงที่ 1080p ได้ตั้งแต่ 0.7 ถึง 3.3 เท่าของความยาวคลิป แล้วแต่การตั้งค่า)
+ * ตัวเลขที่เดาจากค่าคงที่จะผิดจนผู้ใช้เลิกเชื่อ ซึ่งแย่กว่าไม่บอกเลย
+ *
+ * ยังไม่เสร็จสักช่วง = ยังไม่มีข้อมูลพอจะประมาณ คืน null ไปแล้วบอกแค่ว่าอยู่ช่วงไหน
+ */
+export function renderEta(progress: RenderProgress, now: Date = new Date()): string | null {
+  const { done, total, startedAt } = progress
+
+  if (!startedAt || total === null || done < 1 || done >= total) return null
+
+  const elapsedMs = now.getTime() - new Date(startedAt).getTime()
+  if (!(elapsedMs > 0)) return null
+
+  const remainingMs = (elapsedMs / done) * (total - done)
+  const minutes = Math.round(remainingMs / 60000)
+
+  if (minutes < 1) return 'ไม่ถึงนาที'
+  if (minutes < 60) return `${minutes} นาที`
+  return `${Math.round(minutes / 6) / 10} ชั่วโมง`
+}
+
+/**
+ * เปอร์เซ็นต์ความคืบหน้าของแถบ — คลิปที่ยังไม่เริ่มก็ควรเห็นว่ามีอะไรเดินไปแล้วบ้าง
+ *
+ * ส่ง fraction มาด้วย = รู้ความคืบหน้า "ภายใน" ขั้นนั้น (เช่นตัดต่อไปแล้ว 3 จาก 8 ช่วง)
+ * แถบจะเดินจากปลายขั้นก่อนหน้าไปหาปลายขั้นนี้ตามสัดส่วน แทนที่จะกระโดดไปสุดขั้น
+ * ตั้งแต่วินาทีแรก แล้วค้างอยู่ตรงนั้นครึ่งชั่วโมงจนดูเหมือนแขวน
+ */
+export function progressPercent(step: number, fraction?: number): number {
   const clamped = Math.min(Math.max(step, 0), TOTAL_STEPS)
-  return Math.round((clamped / TOTAL_STEPS) * 100)
+
+  if (fraction === undefined) return Math.round((clamped / TOTAL_STEPS) * 100)
+
+  const within = Math.min(Math.max(fraction, 0), 1)
+  return Math.round(((clamped - 1 + within) / TOTAL_STEPS) * 100)
+}
+
+/** สัดส่วนที่ตัดต่อไปแล้ว — null = ไม่ได้แบ่งช่วง จึงไม่มีอะไรให้รายงานระหว่างทาง */
+export function renderFraction(progress: RenderProgress): number | undefined {
+  if (progress.total === null || progress.total <= 1) return undefined
+  return Math.min(Math.max(progress.done / progress.total, 0), 1)
 }
 
 const JOB_LABEL: Record<JobKind, string> = {

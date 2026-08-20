@@ -122,6 +122,10 @@ export type VideoRow = {
   published_at: string | null
   block_reason: string | null
   format: VideoFormat
+  /** จำนวนช่วงที่ต้องเรนเดอร์ทั้งหมด — null = worker ยังไม่ได้เริ่ม */
+  render_total: number | null
+  render_done: number
+  render_started_at: string | null
   created_at: string
   updated_at: string
 }

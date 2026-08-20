@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { Section, type Row } from '@/components/section'
 import { AutoRefresh } from '@/components/auto-refresh'
-import { formatRelative, jobLabel, jobView, videoStage } from '@/lib/pipeline'
+import { formatRelative, jobLabel, jobView, renderFraction, videoStage } from '@/lib/pipeline'
 import { KpiStrip, type Kpi } from '@/components/kpi-strip'
 import { Sparkline } from '@/components/sparkline'
 import { RequeueButton } from '@/components/requeue-button'
@@ -49,7 +49,9 @@ export default async function Page() {
   const [{ data: videos }, { data: jobs }] = await Promise.all([
     supabase
       .from('videos')
-      .select('id, title, status, block_reason, published_at, storage_path')
+      // ⚠️ ต้องเป็นสตริงลิเทอรัลก้อนเดียว — ต่อสตริงเมื่อไร supabase-js อ่านสคีมาไม่ออก
+      // แล้วยุบทุกฟิลด์เป็น error type โดยไม่บอกว่าสาเหตุคือการต่อสตริง
+      .select('id, title, status, block_reason, published_at, storage_path, render_total, render_done, render_started_at')
       .order('created_at', { ascending: false })
       .limit(60),
     supabase
@@ -112,7 +114,13 @@ export default async function Page() {
     : []
 
   const videoRows = (videos ?? []).map((video) => {
-    const stage = videoStage(video.status)
+    // ตอนกำลังตัดต่อ ให้ stage บอกด้วยว่าไปถึงช่วงไหนแล้วและเหลืออีกนานเท่าไร
+    const progress = {
+      done: video.render_done,
+      total: video.render_total,
+      startedAt: video.render_started_at,
+    }
+    const stage = videoStage(video.status, progress)
     return {
       row: {
         key: video.id,
@@ -122,6 +130,8 @@ export default async function Page() {
         // เหตุผลที่ระบบบล็อกมีค่ากว่าคำว่า "ถูกบล็อก" — เอามาแสดงแทนเมื่อมี
         detail: video.block_reason ?? stage.detail,
         step: stage.step,
+        // แถบเดินคืบตามช่วงที่เรนเดอร์เสร็จ แทนที่จะค้างอยู่ที่ 3/4 ตลอดครึ่งชั่วโมง
+        fraction: video.status === 'rendering' ? renderFraction(progress) : undefined,
         // มีไฟล์แล้วต้องเอาออกไปใช้ได้จากในแอป ไม่ใช่ต้องไปเปิด Supabase Dashboard เอง
         action: video.storage_path
           ? { href: `/api/videos/${video.id}/download`, label: '⬇ ดาวน์โหลด mp4' }

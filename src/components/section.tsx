@@ -10,6 +10,8 @@ export type Row = {
   detail: string
   /** ขั้นในสายการผลิต — ไม่ใส่ = ไม่ต้องแสดงแถบความคืบหน้า */
   step?: number
+  /** ความคืบหน้าภายในขั้นนั้น (0–1) — มีเฉพาะตอนตัดต่อคลิปที่แบ่งเป็นหลายช่วง */
+  fraction?: number
   /** ปุ่มท้ายแถว เช่นดาวน์โหลดคลิปที่เรนเดอร์เสร็จแล้ว */
   action?: { href: string; label: string }
 }
@@ -59,7 +61,7 @@ export function Section({
               <p className="mt-1.5 text-sm text-ink-muted">{row.detail}</p>
               {row.step !== undefined && (
                 <div className="mt-2.5">
-                  <ProgressBar step={row.step} tone={row.tone} />
+                  <ProgressBar step={row.step} tone={row.tone} fraction={row.fraction} />
                 </div>
               )}
               {row.action && (
