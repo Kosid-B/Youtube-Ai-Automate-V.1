@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
-import { buildConcatCommand, buildFfmpegCommand } from '@/lib/ffmpeg'
+import { buildConcatCommand, buildFfmpegCommand, upscaleFactor } from '@/lib/ffmpeg'
 import { buildRenderPlan } from '@/lib/render-plan'
 import { concatListFile, planChunks } from '@/lib/render-chunks'
 import { splitIntoScenes } from '@/lib/scenes'
@@ -25,7 +25,35 @@ function makePlan() {
   })
 }
 
+describe('upscaleFactor', () => {
+  /**
+   * ตัวคูณตายตัวพังฝั่งใดฝั่งหนึ่งเสมอ — ×4 ที่ 1080p แพงกว่า ×2 ถึง 3 เท่าโดยไม่ได้อะไร
+   * (วัดจริง: 199 วินาที vs 67 วินาที สำหรับคลิป 60 วินาที · ความลื่นเท่ากัน)
+   * ส่วน ×2 ที่ 640 จะขยายได้แค่ 1280 ซึ่งน้อยไปจนภาพเดินเป็นขั้น
+   */
+  it('ขยายให้ได้ราว 3840px ไม่ว่าเฟรมปลายทางจะขนาดไหน', () => {
+    expect(upscaleFactor(1920)).toBe(2)
+    expect(upscaleFactor(1080)).toBe(4)
+    expect(upscaleFactor(640)).toBe(4)
+  })
+
+  it('ต้องไม่ต่ำกว่า 2 แม้เฟรมจะใหญ่กว่าเป้า — ต่ำกว่านั้นภาพเดินเป็นขั้นชัด', () => {
+    expect(upscaleFactor(3840)).toBe(2)
+    expect(upscaleFactor(7680)).toBe(2)
+  })
+})
+
 describe('buildFfmpegCommand', () => {
+  it('ขนาดที่ขยายก่อน zoompan ต้องมาจาก upscaleFactor ของเฟรมนั้น', () => {
+    const graph = buildFfmpegCommand(makePlan(), {
+      subtitlePath: '/tmp/s.srt',
+      outputPath: '/tmp/o.mp4',
+    }).filterGraph
+    // makePlan() ใช้ค่าเริ่มต้น 1920x1080 → ×2
+    expect(graph).toContain('scale=3840:2160')
+    expect(graph).not.toContain('scale=7680:4320')
+  })
+
   it('ภาพนิ่งทุกใบต้องมี -loop 1 และ -t ไม่งั้น ffmpeg อ่านเฟรมเดียวแล้วจบ', () => {
     const { args } = buildFfmpegCommand(makePlan(), {
       subtitlePath: '/tmp/s.srt',

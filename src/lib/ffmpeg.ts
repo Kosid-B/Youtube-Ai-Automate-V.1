@@ -31,7 +31,31 @@ export type FfmpegOptions = {
  * และต้องขยายภาพต้นทางขึ้นก่อน zoompan เสมอ ไม่งั้นภาพจะกระตุกเป็นขั้น ๆ
  * เพราะ zoompan ปัดตำแหน่งเป็นพิกเซลเต็มของภาพต้นทาง
  */
-const UPSCALE = 4
+
+/**
+ * ความกว้างที่ขยายภาพขึ้นไปก่อนเข้า zoompan
+ *
+ * เดิมเขียนเป็นตัวคูณตายตัว ×4 ซึ่งตั้งไว้ตอนทดสอบที่ 640×360 (→ 2560px กำลังดี)
+ * แต่พอใช้จริงที่ 1920×1080 มันกลายเป็น 7680×4320 = 33 ล้านพิกเซลต่อเฟรม
+ * ซึ่งแพงมหาศาลโดยไม่ได้อะไรกลับมา
+ *
+ * วัดจริงที่ 1080p (คลิป 60 วินาที 4 ฉาก มี xfade และซับครบ):
+ *   ×4 → 199 วินาที (3.3 เท่าของความยาวคลิป)
+ *   ×2 →  67 วินาที (1.1 เท่า)  ← เร็วขึ้น 3 เท่า
+ * ความลื่นเท่ากัน: นับเฟรมซ้ำด้วย mpdecimate ได้ ×2 = 6/450 · ×4 = 59/450
+ * (×2 ยังซ้ำน้อยกว่าด้วยซ้ำ) และเทียบภาพนิ่งกลางแพนแล้วแยกด้วยตาไม่ออก
+ *
+ * ผูกกับ "ความกว้างปลายทาง" แทนตัวคูณ จึงได้ ×2 ที่ 1080p และยังได้ ×4 ที่ 640
+ * ซึ่งเป็นค่าที่พิสูจน์มาแล้วทั้งคู่ — เขียนเป็นตัวคูณตายตัวเมื่อไร อีกฝั่งจะพังเสมอ
+ */
+const UPSCALE_TARGET_WIDTH = 3840
+const UPSCALE_MIN = 2
+const UPSCALE_MAX = 4
+
+export function upscaleFactor(canvasWidth: number): number {
+  const raw = Math.round(UPSCALE_TARGET_WIDTH / Math.max(canvasWidth, 1))
+  return Math.min(Math.max(raw, UPSCALE_MIN), UPSCALE_MAX)
+}
 
 function kenBurnsFilter(
   clip: RenderPlan['clips'][number],
@@ -72,12 +96,13 @@ function kenBurnsFilter(
 
   const w = canvas.width
   const h = canvas.height
+  const upscale = upscaleFactor(w)
 
   return [
     // ครอบภาพให้เต็มเฟรมก่อน ไม่ว่าภาพต้นทางจะสัดส่วนไหน
     `scale=${w}:${h}:force_original_aspect_ratio=increase`,
     `crop=${w}:${h}`,
-    `scale=${w * UPSCALE}:${h * UPSCALE}`,
+    `scale=${w * upscale}:${h * upscale}`,
     `zoompan=z='${zoomExpr}':x='${x}':y='${y}':d=${frames}:s=${w}x${h}:fps=${canvas.fps}`,
     'setsar=1',
   ].join(',')
