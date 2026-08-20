@@ -187,6 +187,35 @@ export function buildFfmpegCommand(plan: RenderPlan, options: FfmpegOptions): Ff
 }
 
 /**
+ * ต่อไฟล์ที่เรนเดอร์แยกช่วงเข้าด้วยกัน โดยไม่เข้ารหัสใหม่
+ *
+ * -c copy คือหัวใจ: ต่อ 45 นาทีเสร็จในไม่กี่วินาที และคุณภาพไม่ลดลงอีกชั้น
+ * ใช้ได้เพราะทุกช่วงถูกเข้ารหัสด้วยค่าเดียวกันหมด (codec/ความละเอียด/fps/อัตราสุ่มเสียง)
+ * ถ้าวันไหนช่วงใดใช้ค่าต่างออกไป ต้องเลิกใช้ -c copy ไม่ใช่ฝืนต่อ
+ *
+ * -safe 0 จำเป็นเพราะรายการชี้ไปพาธเต็ม (โฟลเดอร์ชั่วคราวจาก mkdtemp)
+ * ค่าเริ่มต้นของ demuxer รับเฉพาะพาธสัมพัทธ์ที่ "ปลอดภัย" เท่านั้น
+ *
+ * +faststart ย้ายตาราง moov ไปหัวไฟล์ — YouTube เริ่มประมวลผลได้โดยไม่ต้องรอทั้งไฟล์
+ */
+export function buildConcatCommand(listPath: string, outputPath: string): string[] {
+  return [
+    '-y',
+    '-f',
+    'concat',
+    '-safe',
+    '0',
+    '-i',
+    listPath,
+    '-c',
+    'copy',
+    '-movflags',
+    '+faststart',
+    outputPath,
+  ]
+}
+
+/**
  * escape ค่าที่ส่งเป็นออปชันของ filter — ต้องทำ "สองชั้น" ไม่ใช่ชั้นเดียว
  *
  * ffmpeg แกะสตริงสองรอบ: รอบแรกระดับ filtergraph รอบสองระดับออปชันของ filter

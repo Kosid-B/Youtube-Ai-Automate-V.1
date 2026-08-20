@@ -18,7 +18,17 @@ import { metricsSync } from './handlers/metrics-sync'
 const WORKER_ID = process.env.WORKER_ID ?? `worker-${process.pid}`
 const POLL_INTERVAL_MS = Number(process.env.WORKER_POLL_INTERVAL_MS ?? 2000)
 
-type Handler<K extends JobKind> = (db: WorkerClient, payload: JobPayloads[K]) => Promise<void>
+/**
+ * handler ที่รันนานใช้ ctx.jobId ส่งสัญญาณชีพ (heartbeatJob) ระหว่างทาง
+ * handler ที่จบเร็วละพารามิเตอร์ตัวนี้ไปได้เลย
+ */
+export type JobContext = { jobId: string }
+
+type Handler<K extends JobKind> = (
+  db: WorkerClient,
+  payload: JobPayloads[K],
+  ctx: JobContext,
+) => Promise<void>
 
 const HANDLERS: { [K in JobKind]: Handler<K> } = {
   idea_generate: ideaGenerate,
@@ -60,7 +70,7 @@ async function runJob(db: WorkerClient, job: JobRow): Promise<void> {
   }
 
   try {
-    await handler(db, job.payload as JobPayloads[JobKind])
+    await handler(db, job.payload as JobPayloads[JobKind], { jobId: job.id })
     await completeJob(db, job.id, true)
   } catch (error) {
     // โควตาเต็ม ฯลฯ — ไม่ใช่ความล้มเหลวของงาน เลื่อนไปรอบถัดไปแทน

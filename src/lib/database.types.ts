@@ -216,6 +216,10 @@ export type Database = {
         Args: { p_worker_id: string; p_kinds?: string[] | null }
         Returns: JobRow | null
       }
+      heartbeat_job: {
+        Args: { p_job_id: string }
+        Returns: undefined
+      }
       complete_job: {
         Args: { p_job_id: string; p_ok: boolean; p_error?: string | null }
         Returns: JobRow

@@ -56,6 +56,21 @@ export async function claimJob(
   return (data as JobRow | null) ?? null
 }
 
+/**
+ * บอกว่างานที่รันนานยังมีชีวิตอยู่ — เลื่อน claimed_at ออกไป
+ *
+ * หน้าสายการผลิตถือว่า claimed ค้างเกิน 30 นาที = worker ตาย แล้วเสนอปุ่มเอากลับเข้าคิว
+ * งานที่ใช้เวลาเกินนั้นตามปกติ (เรนเดอร์คลิป 45 นาที) จึงต้องส่งสัญญาณเป็นระยะ
+ * ไม่งั้นผู้ใช้จะกด requeue งานที่กำลังทำงานอยู่ แล้วได้เรนเดอร์ซ้อนสองรอบ
+ *
+ * ล้มตรงนี้ต้องไม่ทำให้งานล้ม — เสียสัญญาณชีพหนึ่งครั้งแค่ทำให้ป้ายสถานะเพี้ยน
+ * แต่ throw ออกไปคือทิ้งงานเรนเดอร์ที่ทำมาแล้วครึ่งชั่วโมง
+ */
+export async function heartbeatJob(db: Client, jobId: string): Promise<void> {
+  const { error } = await db.rpc('heartbeat_job', { p_job_id: jobId })
+  if (error) console.warn(`[jobs] ส่งสัญญาณชีพงาน ${jobId} ไม่สำเร็จ: ${error.message}`)
+}
+
 /** ปิดงานเสมอ แม้ handler จะ throw — ไม่งั้นงานค้างสถานะ claimed ตลอดไป */
 export async function completeJob(
   db: Client,

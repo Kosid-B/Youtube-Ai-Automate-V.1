@@ -5,11 +5,13 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 
 import type { WorkerClient } from '../supabase'
-import type { JobPayloads } from '@/lib/jobs'
+import { heartbeatJob, type JobPayloads } from '@/lib/jobs'
+import type { JobContext } from '../run'
 import { sceneImageQueries } from '@/lib/anthropic'
-import { buildFfmpegCommand } from '@/lib/ffmpeg'
+import { buildConcatCommand, buildFfmpegCommand } from '@/lib/ffmpeg'
 import { creditBlock, downloadPhoto, pickPhoto, searchPhotos, type PexelsPhoto } from '@/lib/pexels'
 import { buildRenderPlan } from '@/lib/render-plan'
+import { concatListFile, planChunks } from '@/lib/render-chunks'
 import { splitIntoScenes, type Scene } from '@/lib/scenes'
 import { formatSpec, formatWarning, minPhotoSize } from '@/lib/formats'
 import { buildDescription, chapterBlock, ctaWarning } from '@/lib/description'
@@ -21,7 +23,13 @@ import { track } from '@/lib/analytics'
 
 const run = promisify(execFile)
 
-/** ffmpeg กินเวลานานกับคลิปยาว ตั้งเพดานไว้กันงานค้างทั้งคิว */
+/**
+ * เพดานเวลาของ ffmpeg "ต่อหนึ่งช่วง" ไม่ใช่ต่อทั้งคลิป
+ *
+ * คลิปยาวถูกแบ่งเป็นช่วงละ ~6 นาทีก่อนเรนเดอร์ (ดู lib/render-chunks.ts)
+ * เพดานนี้จึงคุมช่วงเดียว ส่วนงานทั้งงานใช้เวลารวมได้นานกว่านี้มาก
+ * ซึ่งตั้งใจ — งานเรนเดอร์ไม่มีเพดานรวม มีแต่สัญญาณชีพบอกคิวว่ายังไม่ตาย
+ */
 const FFMPEG_TIMEOUT_MS = 20 * 60 * 1000
 
 function voice() {
@@ -56,6 +64,7 @@ function subtitleStyle() {
 export async function videoRender(
   db: WorkerClient,
   payload: JobPayloads['video_render'],
+  ctx?: JobContext,
 ): Promise<void> {
   const { data: video } = await db
     .from('videos')
@@ -101,34 +110,64 @@ export async function videoRender(
     )
     const audio = await collectAudio(scenes, workDir)
 
-    const plan = buildRenderPlan({
-      scenes,
-      durationsSec: audio.durations,
-      imagePaths: images.paths,
-      audioPaths: audio.paths,
-      canvas: spec.canvas,
-      crossfadeSeconds: spec.crossfadeSeconds,
-    })
+    /**
+     * เรนเดอร์ทีละช่วงแล้วต่อกัน — คำสั่งเดียวรวดเดียวใช้ไม่ได้กับคลิปยาว
+     * (ทั้งชนเพดานเวลาและเปิดไฟล์เข้าพร้อมกันเยอะเกิน · ดู lib/render-chunks.ts)
+     *
+     * คลิปสั้นได้ช่วงเดียว = พฤติกรรมเดิมทุกประการ ไม่มีการต่อไฟล์
+     */
+    const chunks = planChunks(audio.durations)
+    const totalSeconds = round(chunks.reduce((sum, chunk) => sum + chunk.seconds, 0))
 
     // คลิปสั้นที่ยาวเกิน 3 นาทีจะไม่ถูกนับเป็น Short — เสียเหตุผลเดียวที่ทำคลิปสั้น
     // ไม่หยุดงาน เพราะไฟล์ยังใช้ได้ แต่ต้องเห็นว่าเกิดขึ้นแล้ว
-    const warning = formatWarning(video.format, plan.totalSeconds)
+    const warning = formatWarning(video.format, totalSeconds)
     if (warning) console.warn(`[video_render] ${video.id} ⚠️ ${warning}`)
 
-    const subtitlePath = join(workDir, 'subtitles.srt')
-    await writeFile(subtitlePath, toSrt(plan.subtitles), 'utf8')
+    console.log(
+      `[video_render] ${video.id} เริ่มประกอบ ${scenes.length} ฉาก ${totalSeconds}s` +
+        (chunks.length > 1 ? ` แบ่ง ${chunks.length} ช่วง` : ''),
+    )
 
-    const outputPath = join(workDir, 'out.mp4')
-    const { args } = buildFfmpegCommand(plan, {
-      subtitlePath,
-      outputPath,
-      fontSize: spec.subtitleFontSize,
-      marginV: spec.subtitleMarginV,
-      ...subtitleStyle(),
-    })
+    const chunkPaths: string[] = []
 
-    console.log(`[video_render] ${video.id} เริ่มประกอบ ${scenes.length} ฉาก ${plan.totalSeconds}s`)
-    await run('ffmpeg', args, { timeout: FFMPEG_TIMEOUT_MS, maxBuffer: 32 * 1024 * 1024 })
+    for (let i = 0; i < chunks.length; i += 1) {
+      const chunk = chunks[i]
+      const slice = <T,>(items: T[]) => items.slice(chunk.start, chunk.end)
+
+      const plan = buildRenderPlan({
+        scenes: slice(scenes),
+        durationsSec: slice(audio.durations),
+        imagePaths: slice(images.paths),
+        audioPaths: slice(audio.paths),
+        canvas: spec.canvas,
+        crossfadeSeconds: spec.crossfadeSeconds,
+      })
+
+      // ซับของแต่ละช่วงนับเวลาจาก 0 ใหม่ เพราะเผาลงไฟล์ของช่วงนั้นแยกกัน
+      const subtitlePath = join(workDir, `sub-${pad(i)}.srt`)
+      await writeFile(subtitlePath, toSrt(plan.subtitles), 'utf8')
+
+      const chunkPath = join(workDir, `chunk-${pad(i)}.mp4`)
+      const { args } = buildFfmpegCommand(plan, {
+        subtitlePath,
+        outputPath: chunkPath,
+        fontSize: spec.subtitleFontSize,
+        marginV: spec.subtitleMarginV,
+        ...subtitleStyle(),
+      })
+
+      await run('ffmpeg', args, { timeout: FFMPEG_TIMEOUT_MS, maxBuffer: 32 * 1024 * 1024 })
+      chunkPaths.push(chunkPath)
+
+      if (chunks.length > 1) {
+        console.log(`[video_render] ${video.id} ช่วง ${i + 1}/${chunks.length} เสร็จ (${chunk.seconds}s)`)
+        // บอกคิวว่ายังไม่ตาย ไม่งั้นงานที่ใช้เวลาเกิน 30 นาทีจะถูกติดป้ายว่า worker ตาย
+        if (ctx) await heartbeatJob(db, ctx.jobId)
+      }
+    }
+
+    const outputPath = await concatChunks(chunkPaths, workDir)
 
     // ปกสร้างจากภาพฉากแรก — ภาพที่คนเห็นก่อนกดควรตรงกับสิ่งที่คลิปเปิดเรื่อง
     const thumbnailPath = await makeThumbnail(db, video, images.paths[0], spec, workDir)
@@ -168,7 +207,9 @@ export async function videoRender(
     await track('render_completed', video.org_id, {
       format: video.format,
       scenes: scenes.length,
-      seconds: plan.totalSeconds,
+      // เก็บจำนวนช่วงไว้ดูว่าการแบ่งเกิดขึ้นจริงบ่อยแค่ไหน และคุ้มกับรอยต่อที่เสียไปไหม
+      chunks: chunks.length,
+      seconds: totalSeconds,
       images: images.paths.length,
     })
 
@@ -393,4 +434,35 @@ function chapterText(
   )
 
   return chapterBlock(chapterMarks(chapters.map((c) => c.heading), seconds))
+}
+
+/**
+ * ต่อไฟล์ของทุกช่วงเป็นคลิปเดียว
+ *
+ * ช่วงเดียวไม่ต้องต่อ — คืนไฟล์นั้นไปเลย ประหยัดการอ่าน/เขียนทั้งไฟล์โดยไม่ได้อะไร
+ * และทำให้คลิปสั้นเดินเส้นทางเดิมเป๊ะ ๆ
+ */
+async function concatChunks(chunkPaths: string[], workDir: string): Promise<string> {
+  if (chunkPaths.length === 1) return chunkPaths[0]
+
+  const listPath = join(workDir, 'chunks.txt')
+  await writeFile(listPath, concatListFile(chunkPaths), 'utf8')
+
+  const outputPath = join(workDir, 'out.mp4')
+  // ต่อโดยไม่เข้ารหัสใหม่ — 45 นาทีเสร็จในไม่กี่วินาที จึงไม่ต้องใช้เพดานเวลาของการเรนเดอร์
+  await run('ffmpeg', buildConcatCommand(listPath, outputPath), {
+    timeout: FFMPEG_TIMEOUT_MS,
+    maxBuffer: 32 * 1024 * 1024,
+  })
+
+  return outputPath
+}
+
+/** เลขลำดับไฟล์ให้เรียงถูกตามชื่อ — chunk-10 ต้องไม่มาก่อน chunk-2 ตอนไล่ดูตอน debug */
+function pad(index: number): string {
+  return String(index).padStart(3, '0')
+}
+
+function round(seconds: number): number {
+  return Math.round(seconds * 1000) / 1000
 }

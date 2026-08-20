@@ -3,8 +3,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
-import { buildFfmpegCommand } from '@/lib/ffmpeg'
+import { buildConcatCommand, buildFfmpegCommand } from '@/lib/ffmpeg'
 import { buildRenderPlan } from '@/lib/render-plan'
+import { concatListFile, planChunks } from '@/lib/render-chunks'
 import { splitIntoScenes } from '@/lib/scenes'
 import { toSrt } from '@/lib/subtitles'
 
@@ -266,5 +267,120 @@ describe.skipIf(!hasFfmpeg)('เรนเดอร์จริงด้วย ff
       expect(Math.max(...strip)).toBeGreaterThan(200)
     },
     120_000,
+  )
+
+  /**
+   * เรนเดอร์แยกช่วงแล้วต่อกัน — เส้นทางของคลิปยาวพิเศษ
+   *
+   * จับสองอย่างที่พังเงียบได้ทั้งคู่:
+   *
+   * 1. ความยาวหาย/เกินตรงรอยต่อ — concat -c copy ถ้าค่าเข้ารหัสของแต่ละช่วงไม่ตรงกัน
+   *    จะได้ไฟล์ที่เปิดได้แต่ยาวไม่ถูก โดย ffmpeg ไม่คืน error
+   *
+   * 2. ซับหายในช่วงที่สองเป็นต้นไป — ซับของแต่ละช่วงต้องนับเวลาจาก 0 ใหม่
+   *    ถ้าเผลอส่งเวลาแบบทั้งคลิปไป cue ของช่วงหลังจะอยู่นอกช่วงเวลาของไฟล์นั้น
+   *    ผลคือช่วงแรกมีซับ ช่วงหลังไม่มี และไม่มีอะไรฟ้องเลยสักอย่าง
+   */
+  it(
+    'เรนเดอร์แยกช่วงแล้วต่อกัน ต้องได้ความยาวครบ และมีซับทุกช่วง',
+    () => {
+      const dir = join(workDir, 'chunked')
+      mkdirSync(dir, { recursive: true })
+
+      const many = splitIntoScenes(
+        Array.from({ length: 6 }, (_, i) => `ฉากที่ ${i + 1} ทดสอบซับไตเติลภาษาไทย`).join('\n'),
+        { targetChars: 30, maxChars: 40 },
+      )
+      const secs = many.map(() => 2)
+
+      const images = many.map((_, i) => {
+        const path = join(dir, `img${i}.png`)
+        execFileSync('ffmpeg', [
+          '-y', '-f', 'lavfi', '-i', 'color=c=0x101820:s=640x360', '-frames:v', '1', path,
+        ], { stdio: 'ignore' })
+        return path
+      })
+      const sounds = many.map((_, i) => {
+        const path = join(dir, `snd${i}.wav`)
+        execFileSync('ffmpeg', [
+          '-y', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=2',
+          '-ar', '24000', '-ac', '1', path,
+        ], { stdio: 'ignore' })
+        return path
+      })
+
+      // เป้า 5 วินาที กับฉากละ 2 วินาที → ได้หลายช่วง ช่วงละ 2 ฉาก
+      const chunks = planChunks(secs, 5)
+      expect(chunks.length).toBeGreaterThan(1)
+
+      const chunkPaths = chunks.map((chunk, i) => {
+        const plan = buildRenderPlan({
+          scenes: many.slice(chunk.start, chunk.end),
+          durationsSec: secs.slice(chunk.start, chunk.end),
+          imagePaths: images.slice(chunk.start, chunk.end),
+          audioPaths: sounds.slice(chunk.start, chunk.end),
+          canvas: { width: 640, height: 360, fps: 24 },
+        })
+
+        const srtPath = join(dir, `sub${i}.srt`)
+        writeFileSync(srtPath, toSrt(plan.subtitles), 'utf8')
+
+        const path = join(dir, `chunk${i}.mp4`)
+        execFileSync(
+          'ffmpeg',
+          buildFfmpegCommand(plan, { subtitlePath: srtPath, outputPath: path, fontSize: 20 }).args,
+          { stdio: 'pipe' },
+        )
+        return path
+      })
+
+      const listPath = join(dir, 'list.txt')
+      writeFileSync(listPath, concatListFile(chunkPaths), 'utf8')
+
+      const outputPath = join(dir, 'joined.mp4')
+      execFileSync('ffmpeg', buildConcatCommand(listPath, outputPath), { stdio: 'pipe' })
+
+      const probe = JSON.parse(
+        execFileSync('ffprobe', [
+          '-v', 'quiet', '-print_format', 'json',
+          '-show_format', '-show_streams', outputPath,
+        ]).toString(),
+      ) as {
+        format: { duration: string }
+        streams: { codec_type: string; width?: number }[]
+      }
+
+      const expected = secs.reduce((a, b) => a + b, 0)
+      expect(Number(probe.format.duration)).toBeCloseTo(expected, 0)
+      expect(probe.streams.find((s) => s.codec_type === 'video')?.width).toBe(640)
+      expect(probe.streams.find((s) => s.codec_type === 'audio')).toBeDefined()
+
+      const stripAt = (seconds: number) => {
+        const raw = execFileSync('ffmpeg', [
+          '-v', 'quiet', '-ss', String(seconds), '-i', outputPath, '-frames:v', '1',
+          '-vf', 'crop=640:100:0:260', '-f', 'rawvideo', '-pix_fmt', 'gray', '-',
+        ], { maxBuffer: 10 * 1024 * 1024 })
+        expect(raw.length).toBe(640 * 100)
+        return raw
+      }
+
+      const first = stripAt(1)
+      const last = stripAt(expected - 3)
+
+      // มีตัวหนังสือวาดอยู่จริงทั้งต้นและท้าย (พื้นเข้ม ตัวอักษรขาว)
+      expect(Math.max(...first)).toBeGreaterThan(200)
+      expect(Math.max(...last)).toBeGreaterThan(200)
+
+      /**
+       * และต้องเป็น "คนละข้อความ" ด้วย
+       *
+       * เช็คแค่ว่ามีตัวหนังสือไม่พอ — ทดลองแล้วว่าถ้าส่งซับแบบทั้งคลิป (ไม่ rebase)
+       * ให้ทุกช่วง ช่วงหลังก็ยังมีตัวหนังสือขึ้น เพราะไฟล์ของมันเริ่มนับเวลาที่ 0 เหมือนกัน
+       * แต่เป็นข้อความของฉากแรกซ้ำอีกรอบ ซึ่งเช็คความสว่างจับไม่ได้เลย
+       * เทียบพิกเซลจึงเป็นตัวเดียวที่แยก "ซับถูกฉาก" ออกจาก "ซับขึ้นเฉย ๆ" ได้
+       */
+      expect(Buffer.compare(first, last)).not.toBe(0)
+    },
+    180_000,
   )
 })
