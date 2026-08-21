@@ -11,6 +11,9 @@
  * เป็นข้อเท็จจริงที่โมเดลจำผิดได้ และผิดแล้วจะกลายเป็นหัวข้อที่เล็งกลุ่มผิด
  */
 
+import { salesStyleContext, type ScriptStyle } from '@/lib/sales-style'
+import type { ProofPoint } from '@/lib/proof'
+
 /** สัดส่วนเจนจากทะเบียนราษฎร์ ธ.ค. 2568 (skill: market-insight-thailand) */
 export const AUDIENCE_SEGMENTS = [
   {
@@ -110,6 +113,10 @@ export type IdeaBrief = {
   niche: string | null
   /** หัวข้อที่ทำไปแล้ว — กันคิดซ้ำ */
   recentTitles: string[]
+  /** โทนการเล่าของช่อง — โทน direct ทำให้หัวข้อต้องสัญญาผลลัพธ์ที่จับต้องได้ */
+  style?: ScriptStyle
+  /** หลักฐานที่ช่องอ้างได้ — หัวข้อที่มีตัวเลขต้องมาจากรายการนี้เท่านั้น */
+  proof?: ProofPoint[]
   /** เจนที่อยากเจาะ ไม่ระบุ = ให้ AI เลือกเองตามแนวช่อง */
   segment?: (typeof AUDIENCE_SEGMENTS)[number]['key']
   count: number
@@ -122,6 +129,8 @@ export type IdeaBrief = {
  * โมเดลจำผิดได้ง่าย และผิดแล้วหัวข้อจะเล็งกลุ่มคนผิดตั้งแต่ต้น
  */
 export function ideaContext(brief: IdeaBrief): string {
+  const style = salesStyleContext(brief.style ?? 'informative', brief.proof ?? [])
+
   const segments = brief.segment
     ? AUDIENCE_SEGMENTS.filter((s) => s.key === brief.segment)
     : AUDIENCE_SEGMENTS
@@ -141,6 +150,9 @@ export function ideaContext(brief: IdeaBrief): string {
     'ข้อห้าม:',
     ...HOOK_RULES.map((r) => `- ${r}`),
     '',
+    // โทนของช่องต้องมาถึงตั้งแต่ตอนคิดหัวข้อ ไม่ใช่ไปเริ่มตอนเขียนบท —
+    // หัวข้อที่คิดมาแบบเล่าเปล่า ๆ ดัดให้เป็นโทนชวนลงมือทีหลังไม่ได้
+    style ? `${style}\n` : null,
     brief.recentTitles.length > 0
       ? `หัวข้อที่ช่องนี้ทำไปแล้ว (ห้ามซ้ำและห้ามใกล้เคียง):\n${brief.recentTitles.map((t) => `- ${t}`).join('\n')}`
       : null,

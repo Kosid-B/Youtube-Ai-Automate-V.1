@@ -7,6 +7,13 @@ export type Json = string | number | boolean | null | { [key: string]: Json } | 
 
 export type OrgRole = 'owner' | 'admin' | 'editor' | 'viewer'
 export type ScriptStatus = 'draft' | 'checking' | 'ready' | 'blocked'
+
+/**
+ * โทนการเล่าของช่อง — ต้องตรงกับ enum script_style ในฐานข้อมูล
+ * นิยามอยู่ที่นี่ที่เดียว · lib/sales-style.ts re-export ตัวนี้ ห้ามประกาศซ้ำ
+ * (เคยประกาศ VideoFormat ซ้ำมาแล้ว ค่าที่เพิ่มใหม่ผ่าน typecheck ทั้งที่ insert ไม่ได้)
+ */
+export type ScriptStyle = 'informative' | 'direct'
 export type VideoStatus =
   | 'queued'
   | 'rendering'
@@ -79,6 +86,10 @@ export type ChannelRow = {
   /** null = ให้ระบบเลือก project จากคลังให้ · มีค่า = ลูกค้าปักหมุดเอง (BYO) */
   quota_project_key: string | null
   cta_template: string | null
+  /** โทนการเล่า — direct = ชวนให้ลงมือ (ดู lib/sales-style.ts) */
+  script_style: ScriptStyle
+  /** [{claim, source}] — โมเดลใช้ตัวเลขได้เฉพาะในรายการนี้ (ดู lib/proof.ts) */
+  proof_points: Json
   created_at: string
 }
 
@@ -358,6 +369,7 @@ export type Database = {
       org_role: OrgRole
       video_format: VideoFormat
       script_status: ScriptStatus
+      script_style: ScriptStyle
       video_status: VideoStatus
       job_status: JobStatus
     }

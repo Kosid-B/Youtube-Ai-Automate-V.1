@@ -2,7 +2,8 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { CREDITS_PER_CLIP, estimateSpendThb } from '@/lib/costs'
-import { CtaForm, TargetForm, TopUpForm } from './forms'
+import { CtaForm, StyleForm, TargetForm, TopUpForm } from './forms'
+import { parseProofPoints } from '@/lib/proof'
 
 export const dynamic = 'force-dynamic'
 
@@ -41,6 +42,14 @@ export default async function SettingsPage() {
 
   const { data: channels } = await supabase.rpc('channel_oauth_status', { p_org_id: org.id })
 
+  /**
+   * โทนกับหลักฐานอ่านตรงจากตาราง ไม่ผ่าน rpc — policy channels_select เปิดให้
+   * สมาชิกองค์กรอ่านได้อยู่แล้ว และการแก้ rpc ที่มีอยู่ต้อง drop ก่อนสร้างใหม่
+   * (เปลี่ยน return type ของฟังก์ชันที่มีอยู่แล้วไม่ได้) ซึ่งไม่คุ้มกับสองคอลัมน์
+   */
+  const { data: styles } = await supabase.from('channels').select('id, script_style, proof_points')
+  const styleOf = new Map((styles ?? []).map((row) => [row.id, row]))
+
   const clipsLeft = Math.floor(org.credits / CREDITS_PER_CLIP)
 
   return (
@@ -67,6 +76,24 @@ export default async function SettingsPage() {
 
       <Card title="เป้าการผลิต">
         <TargetForm current={org.monthly_target} />
+      </Card>
+
+      <Card title="โทนการเล่าของคลิป" hint={`${channels?.length ?? 0} ช่อง`}>
+        <ul className="mt-1 divide-y divide-line">
+          {(channels ?? []).map((channel) => {
+            const row = styleOf.get(channel.channel_id)
+            return (
+              <li key={channel.channel_id} className="py-3">
+                <span className="font-medium">{channel.channel_name}</span>
+                <StyleForm
+                  channelId={channel.channel_id}
+                  current={row?.script_style ?? 'direct'}
+                  proof={parseProofPoints(row?.proof_points)}
+                />
+              </li>
+            )
+          })}
+        </ul>
       </Card>
 
       <Card title="ข้อความชวนคลิกใต้คลิป" hint={`${channels?.length ?? 0} ช่อง`}>

@@ -69,6 +69,14 @@ Deploy: Next.js บน Vercel, worker แยกบน Railway/Fly (render กิ
 - `worker/` ใช้ `createWorkerClient()` ใน `worker/supabase.ts` แทน เพราะ `server-only` รันนอก Next ไม่ได้
 
 ### 3. Originality Guard
+- **โทน direct-response ใช้ตัวเลขได้เฉพาะจาก `channels.proof_points` เท่านั้น**
+  สไตล์นี้เดินด้วยตัวเลขที่เจาะจง ซึ่งเป็นสิ่งที่โมเดลแต่งขึ้นเองได้ง่ายที่สุดและตรวจยากที่สุด
+  ทางออกคือเปลี่ยนคำสั่งจาก "ห้ามใช้ตัวเลข" เป็น "ใช้ได้เฉพาะในรายการนี้" —
+  เจ้าของช่องใส่เอง พร้อมที่มาเสมอ (`lib/proof.ts` + check constraint `proof_points_ok`)
+  รายการว่าง = สั่งห้ามพูดตัวเลขใด ๆ ซึ่งถูกแล้ว ช่องที่ยังไม่มีผลงานไม่ควรพูดเหมือนมี
+  ⚠️ ต้องส่งย่อหน้าโทนเข้าไปทั้ง generateIdeas / generateScript / generateOutline /
+  generateSection — ใส่แค่ตอนวางโครง ท่อนที่เขียนออกมาจะกลับไปเป็นโทนกลาง
+  และกฎเรื่องตัวเลขจะหายไปพร้อมกัน ซึ่งเป็นข้อที่อันตรายที่สุด
 - ทุกเส้นทางที่นำสคริปต์ไป render หรืออัป ต้องผ่าน originality check ก่อน
   (`src/app/api/videos/render/route.ts` และ `worker/handlers/youtube-upload.ts`)
 - verdict `block` = หยุดที่ API layer ตอบ 409 ห้ามมี flag ให้ผู้ใช้กดข้าม

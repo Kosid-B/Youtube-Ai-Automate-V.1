@@ -1,6 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk'
 
 import { FORMATS, targetScriptChars, type VideoFormat } from '@/lib/formats'
+import { salesStyleContext, type ScriptStyle } from '@/lib/sales-style'
+import type { ProofPoint } from '@/lib/proof'
 import { ideaContext, type IdeaBrief } from '@/lib/idea-angles'
 import type { Outline } from '@/lib/outline'
 import { THAI_CHARS_PER_SECOND } from '@/lib/scenes'
@@ -38,6 +40,24 @@ export interface ScriptBrief {
   performanceNote?: string | null
   /** รูปแบบคลิป — กำหนดความยาวสคริปต์ที่ต้องเขียน */
   format?: VideoFormat
+  /** โทนการเล่าของช่อง — ไม่ระบุ = เล่าให้เข้าใจ (พฤติกรรมเดิม) */
+  style?: ScriptStyle
+  /**
+   * หลักฐานที่ช่องนี้อ้างได้ · โทน direct ใช้ตัวเลขได้เฉพาะในรายการนี้เท่านั้น
+   * รายการว่าง = ห้ามพูดตัวเลขใด ๆ (ดู lib/proof.ts)
+   */
+  proof?: ProofPoint[]
+}
+
+/**
+ * ย่อหน้าโทนการเล่า ใช้ร่วมกันทั้ง generateScript / generateOutline / generateSection
+ *
+ * ต้องใส่ให้ครบทั้งสามที่ ไม่ใช่แค่ที่วางโครง — คลิปยาวเขียนทีละท่อน
+ * ถ้าใส่แค่ตอนวางโครง ท่อนที่เขียนออกมาจะกลับไปเป็นโทนกลาง ๆ ทั้งหมด
+ * และกฎเรื่องตัวเลขจะหายไปพร้อมกันด้วย ซึ่งเป็นข้อที่อันตรายที่สุด
+ */
+function styleBlock(brief: { style?: ScriptStyle; proof?: ProofPoint[] }): string | null {
+  return salesStyleContext(brief.style ?? 'informative', brief.proof ?? []) || null
 }
 
 export interface GeneratedScript {
@@ -122,6 +142,7 @@ export async function generateScript(brief: ScriptBrief): Promise<GeneratedScrip
           brief.angle ? `มุมที่อยากเล่า: ${brief.angle}` : null,
           brief.brief ? `โน้ตเพิ่มเติม: ${brief.brief}` : null,
           recent,
+          styleBlock(brief) ? `\n${styleBlock(brief)}` : null,
           // ท้ายสุดเพราะเป็นแนวทาง ไม่ใช่โจทย์ — หัวข้อกับมุมที่ผู้ใช้สั่งต้องมาก่อน
           brief.performanceNote ? `\n\nสิ่งที่ช่องนี้เรียนรู้มา:\n${brief.performanceNote}` : null,
         ]
@@ -359,6 +380,7 @@ export async function generateOutline(
           `หัวข้อ: ${brief.title}`,
           brief.angle ? `มุมที่อยากเล่า: ${brief.angle}` : null,
           `แบ่งเป็น ${brief.sectionCount} ท่อน`,
+          styleBlock(brief) ? `\n${styleBlock(brief)}` : null,
           brief.recentTitles.length > 0
             ? `เคยทำไปแล้ว (ห้ามซ้ำ):\n${brief.recentTitles.map((t) => `- ${t}`).join('\n')}`
             : null,
@@ -397,6 +419,8 @@ export async function generateSection(input: {
   targetChars: number
   /** ท้ายท่อนก่อนหน้า ~300 ตัวอักษร ใช้ต่อประโยคให้ลื่น */
   previousTail: string | null
+  style?: ScriptStyle
+  proof?: ProofPoint[]
 }): Promise<string> {
   const section = input.outline.sections[input.index]
 
@@ -414,6 +438,7 @@ export async function generateSection(input: {
           input.niche ? `แนวเนื้อหา: ${input.niche}` : null,
           `คลิปเรื่อง: ${input.outline.title}`,
           `ดูจบแล้วต้องทำได้: ${input.outline.promise}`,
+          styleBlock(input) ? `\n${styleBlock(input)}\n` : null,
           '',
           'โครงทั้งคลิป:',
           ...input.outline.sections.map(

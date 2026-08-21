@@ -82,3 +82,35 @@ describe('ideaContext', () => {
     expect(text).not.toContain('ห้ามซ้ำ')
   })
 })
+
+describe('ideaContext กับโทนของช่อง', () => {
+  const base = { channelName: 'ช่องทดสอบ', niche: null, recentTitles: [], count: 3 }
+
+  /** โทนเดิมต้องไม่ถูกแตะ — คลิปความรู้ที่กลายเป็นโฆษณาคือการถดถอย ไม่ใช่ฟีเจอร์ */
+  it('ไม่ระบุโทนต้องได้ prompt เหมือนเดิมทุกประการ', () => {
+    expect(ideaContext(base)).toBe(ideaContext({ ...base, style: 'informative' }))
+  })
+
+  /**
+   * โทนต้องมาถึงตั้งแต่ตอนคิดหัวข้อ ไม่ใช่ไปเริ่มตอนเขียนบท —
+   * หัวข้อที่คิดมาแบบเล่าเปล่า ๆ ดัดให้เป็นโทนชวนลงมือทีหลังไม่ได้
+   */
+  it('โทนชวนลงมือต้องส่งจังหวะการเล่าไปถึงตอนคิดหัวข้อด้วย', () => {
+    const text = ideaContext({ ...base, style: 'direct' })
+    expect(text).toContain('ตีกรอบใหม่ก่อน')
+    expect(text).toContain('ปิดด้วยการกระทำเดียว')
+  })
+
+  it('หลักฐานของช่องต้องไปถึงตอนคิดหัวข้อ พร้อมที่มา', () => {
+    const text = ideaContext({
+      ...base,
+      style: 'direct',
+      proof: [{ claim: 'ลูกค้า 12 ราย', source: 'แบบสอบถาม ก.ค. 2569' }],
+    })
+    expect(text).toContain('แบบสอบถาม ก.ค. 2569')
+  })
+
+  it('โทนชวนลงมือแต่ไม่มีหลักฐาน ต้องยังสั่งห้ามพูดตัวเลข', () => {
+    expect(ideaContext({ ...base, style: 'direct' })).toContain('ห้ามใส่ตัวเลขใด ๆ')
+  })
+})

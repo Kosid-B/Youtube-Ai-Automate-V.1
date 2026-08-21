@@ -1,6 +1,7 @@
 import type { WorkerClient } from '../supabase'
 import type { JobPayloads } from '@/lib/jobs'
 import { generateIdeas } from '@/lib/anthropic'
+import { parseProofPoints } from '@/lib/proof'
 import { AUDIENCE_SEGMENTS } from '@/lib/idea-angles'
 import { track } from '@/lib/analytics'
 
@@ -20,7 +21,7 @@ export async function ideaGenerate(
 ): Promise<void> {
   const { data: channel } = await db
     .from('channels')
-    .select('id, org_id, name, niche')
+    .select('id, org_id, name, niche, script_style, proof_points')
     .eq('id', payload.channel_id)
     .single()
 
@@ -55,6 +56,10 @@ export async function ideaGenerate(
     niche: channel.niche,
     recentTitles,
     segment,
+    // โทนของช่องต้องมาถึงตั้งแต่ตอนคิดหัวข้อ — หัวข้อที่คิดมาแบบเล่าเปล่า ๆ
+    // ดัดให้เป็นโทนชวนลงมือตอนเขียนบททีหลังไม่ได้
+    style: channel.script_style,
+    proof: parseProofPoints(channel.proof_points),
     count: payload.count,
   })
 

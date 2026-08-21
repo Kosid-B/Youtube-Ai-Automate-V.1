@@ -10,6 +10,7 @@ import {
   plannedSections,
   sectionSeconds,
 } from '@/lib/outline'
+import { parseProofPoints } from '@/lib/proof'
 import { track } from '@/lib/analytics'
 import { checkOriginality, SIMILARITY_BLOCK } from '@/lib/originality'
 import type { Json } from '@/lib/database.types'
@@ -44,7 +45,7 @@ export async function scriptGenerate(
 
   const { data: channel } = await db
     .from('channels')
-    .select('id, name, niche')
+    .select('id, name, niche, script_style, proof_points')
     .eq('id', script.channel_id)
     .single()
 
@@ -84,6 +85,13 @@ export async function scriptGenerate(
     console.warn('[script_generate] ดึงผลงานที่ผ่านมาไม่ได้ เขียนต่อโดยไม่ใช้:', error)
   }
 
+  /**
+   * โทนการเล่า + หลักฐานที่ช่องอ้างได้ ต้องส่งเข้าไปทุกครั้งที่เรียกโมเดล
+   * โทน direct ใช้ตัวเลขได้เฉพาะในรายการนี้ · รายการว่าง = ห้ามพูดตัวเลขเลย
+   */
+  const style = channel.script_style
+  const proof = parseProofPoints(channel.proof_points)
+
   const spec = formatSpec(script.format)
 
   /**
@@ -102,6 +110,8 @@ export async function scriptGenerate(
       brief: payload.brief,
       performanceNote,
       format: script.format,
+      style,
+      proof,
       targetSeconds: spec.targetSeconds,
     })
 
@@ -118,6 +128,8 @@ export async function scriptGenerate(
     brief: payload.brief,
     performanceNote,
     format: script.format,
+    style,
+    proof,
   })
 
   await finish(db, script, generated, performanceNote)
@@ -158,6 +170,8 @@ async function writeByOutline(
       targetChars: charsPerSection,
       // ท้ายท่อนก่อนหน้าพอให้ต่อประโยคได้ ไม่ต้องส่งทั้งท่อน — เปลืองโทเคนโดยไม่ช่วยอะไร
       previousTail: previous ? previous.slice(-300) : null,
+      style: brief.style,
+      proof: brief.proof,
     })
 
     sections.push(text)
