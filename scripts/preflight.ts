@@ -19,6 +19,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { loadEnv } from '../worker/env'
+// อ่านเพดานจากที่เดียวกับที่ระบบใช้จริง — ตั้งชื่อตัวแปรเองซ้ำเมื่อไร
+// preflight จะรายงานเพดานคนละตัวกับที่ router บังคับใช้ (เคยเป็นแบบนั้นมาแล้ว)
+import { maxCostUsd } from '../src/lib/video/router'
 
 loadEnv()
 
@@ -323,10 +326,7 @@ async function checkVideoProviders(): Promise<Result> {
     else problems.push('Runway: มีคีย์แต่ไม่ได้ตั้ง RUNWAY_USD_PER_SECOND — ระบบจะไม่ยอมใช้')
   }
 
-  const ceiling = Number(process.env.VIDEO_MAX_COST_USD) > 0
-    ? Number(process.env.VIDEO_MAX_COST_USD)
-    : 5
-  notes.push(`เพดาน $${ceiling.toFixed(2)}/คลิป`)
+  notes.push(`เพดาน $${maxCostUsd().toFixed(2)}/คลิป`)
 
   if (problems.length > 0) return warn(problems.join(' · '), notes.join(' · '))
   return ok(notes.join(' · '))
