@@ -1,5 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk'
-
+import { complete } from '@/lib/llm'
 import { FORMATS, targetScriptChars, type VideoFormat } from '@/lib/formats'
 import { salesStyleContext, type ScriptStyle } from '@/lib/sales-style'
 import type { ProofPoint } from '@/lib/proof'
@@ -7,20 +6,9 @@ import { ideaContext, type IdeaBrief } from '@/lib/idea-angles'
 import type { Outline } from '@/lib/outline'
 import { THAI_CHARS_PER_SECOND } from '@/lib/scenes'
 
-/** โมเดลที่ใช้เขียนสคริปต์ */
-export const SCRIPT_MODEL = 'claude-opus-5'
-
-let cached: Anthropic | null = null
-
-export function anthropic(): Anthropic {
-  if (!cached) {
-    if (!process.env.ANTHROPIC_API_KEY) {
-      throw new Error('ไม่ได้ตั้ง ANTHROPIC_API_KEY')
-    }
-    cached = new Anthropic()
-  }
-  return cached
-}
+// เรียกโมเดลผ่าน lib/llm.ts เสมอ ไม่เรียก SDK ตรง ๆ — สลับไป OpenAI ได้ด้วย
+// LLM_PROVIDER=openai โดยไม่ต้องแตะไฟล์นี้ (ดูตารางแปลงพารามิเตอร์ใน llm.ts)
+export { SCRIPT_MODEL, anthropic } from '@/lib/llm'
 
 export interface ScriptBrief {
   /** ชื่อช่องและแนวเนื้อหา ใช้กำหนดน้ำเสียง */
@@ -122,44 +110,27 @@ export async function generateScript(brief: ScriptBrief): Promise<GeneratedScrip
         .join('\n')}`
     : ''
 
-  const response = await anthropic().messages.create({
-    model: SCRIPT_MODEL,
-    max_tokens: 16000,
-    thinking: { type: 'adaptive' },
-    output_config: {
-      effort: 'high',
-      format: { type: 'json_schema', schema: SCRIPT_SCHEMA },
-    },
+  const text = await complete({
     system: SYSTEM,
-    messages: [
-      {
-        role: 'user',
-        content: [
-          formatBrief(brief.format ?? 'long'),
-          `ช่อง: ${brief.channelName}`,
-          brief.niche ? `แนวเนื้อหา: ${brief.niche}` : null,
-          `หัวข้อ: ${brief.title}`,
-          brief.angle ? `มุมที่อยากเล่า: ${brief.angle}` : null,
-          brief.brief ? `โน้ตเพิ่มเติม: ${brief.brief}` : null,
-          recent,
-          styleBlock(brief) ? `\n${styleBlock(brief)}` : null,
-          // ท้ายสุดเพราะเป็นแนวทาง ไม่ใช่โจทย์ — หัวข้อกับมุมที่ผู้ใช้สั่งต้องมาก่อน
-          brief.performanceNote ? `\n\nสิ่งที่ช่องนี้เรียนรู้มา:\n${brief.performanceNote}` : null,
-        ]
-          .filter(Boolean)
-          .join('\n'),
-      },
-    ],
+    user: [
+      formatBrief(brief.format ?? 'long'),
+      `ช่อง: ${brief.channelName}`,
+      brief.niche ? `แนวเนื้อหา: ${brief.niche}` : null,
+      `หัวข้อ: ${brief.title}`,
+      brief.angle ? `มุมที่อยากเล่า: ${brief.angle}` : null,
+      brief.brief ? `โน้ตเพิ่มเติม: ${brief.brief}` : null,
+      recent,
+      styleBlock(brief) ? `\n${styleBlock(brief)}` : null,
+      // ท้ายสุดเพราะเป็นแนวทาง ไม่ใช่โจทย์ — หัวข้อกับมุมที่ผู้ใช้สั่งต้องมาก่อน
+      brief.performanceNote ? `\n\nสิ่งที่ช่องนี้เรียนรู้มา:\n${brief.performanceNote}` : null,
+    ]
+      .filter(Boolean)
+      .join('\n'),
+    maxTokens: 16000,
+    effort: 'high',
+    schema: SCRIPT_SCHEMA,
+    schemaName: 'script',
   })
-
-  if (response.stop_reason === 'refusal') {
-    throw new Error('โมเดลปฏิเสธคำขอนี้ ลองปรับหัวข้อหรือโน้ตเพิ่มเติม')
-  }
-
-  const text = response.content.find((block) => block.type === 'text')?.text
-  if (!text) {
-    throw new Error('โมเดลไม่ได้ส่งเนื้อหากลับมา')
-  }
 
   return JSON.parse(text) as GeneratedScript
 }
@@ -230,35 +201,24 @@ export async function shotImagePrompts(
 ): Promise<SceneImageQuery[]> {
   if (shots.length === 0) return []
 
-  const response = await anthropic().messages.create({
-    model: SCRIPT_MODEL,
-    max_tokens: 8000,
-    thinking: { type: 'adaptive' },
-    output_config: {
-      effort: 'low',
-      format: { type: 'json_schema', schema: IMAGE_QUERY_SCHEMA },
-    },
+  const text = await complete({
     system: IMAGE_PROMPT_SYSTEM,
-    messages: [
-      {
-        role: 'user',
-        content: [
-          `หัวข้อคลิป: ${context.title}`,
-          context.niche ? `แนวเนื้อหา: ${context.niche}` : null,
-          '',
-          'แต่ละช็อต (ภาพหนึ่งใบต่อหนึ่งช็อต ต้องอยู่ได้ตลอดช็อต):',
-          ...shots.map((shot) => `[${shot.index}] ${shot.text}`),
-        ]
-          .filter((line) => line !== null)
-          .join('\n'),
-      },
-    ],
+    user: [
+      `หัวข้อคลิป: ${context.title}`,
+      context.niche ? `แนวเนื้อหา: ${context.niche}` : null,
+      '',
+      'แต่ละช็อต (ภาพหนึ่งใบต่อหนึ่งช็อต ต้องอยู่ได้ตลอดช็อต):',
+      ...shots.map((shot) => `[${shot.index}] ${shot.text}`),
+    ]
+      .filter((line) => line !== null)
+      .join('\n'),
+    maxTokens: 8000,
+    effort: 'low',
+    schema: IMAGE_QUERY_SCHEMA,
+    schemaName: 'image_queries',
   })
 
-  const block = response.content.find((part) => part.type === 'text')
-  if (!block || block.type !== 'text') throw new Error('โมเดลไม่ได้ตอบเป็นข้อความ')
-
-  const parsed = JSON.parse(block.text) as { queries: { scene_index: number; query: string }[] }
+  const parsed = JSON.parse(text) as { queries: { scene_index: number; query: string }[] }
   return parsed.queries.map((item) => ({ sceneIndex: item.scene_index, query: item.query }))
 }
 
@@ -274,37 +234,22 @@ export async function sceneImageQueries(
 ): Promise<SceneImageQuery[]> {
   if (scenes.length === 0) return []
 
-  const response = await anthropic().messages.create({
-    model: SCRIPT_MODEL,
-    max_tokens: 4000,
-    thinking: { type: 'adaptive' },
-    output_config: {
-      effort: 'low',
-      format: { type: 'json_schema', schema: IMAGE_QUERY_SCHEMA },
-    },
+  const text = await complete({
     system: IMAGE_QUERY_SYSTEM,
-    messages: [
-      {
-        role: 'user',
-        content: [
-          `หัวข้อคลิป: ${context.title}`,
-          context.niche ? `แนวเนื้อหา: ${context.niche}` : null,
-          '',
-          'ฉาก:',
-          ...scenes.map((scene) => `[${scene.index}] ${scene.text}`),
-        ]
-          .filter((line) => line !== null)
-          .join('\n'),
-      },
-    ],
+    user: [
+      `หัวข้อคลิป: ${context.title}`,
+      context.niche ? `แนวเนื้อหา: ${context.niche}` : null,
+      '',
+      'ฉาก:',
+      ...scenes.map((scene) => `[${scene.index}] ${scene.text}`),
+    ]
+      .filter((line) => line !== null)
+      .join('\n'),
+    maxTokens: 4000,
+    effort: 'low',
+    schema: IMAGE_QUERY_SCHEMA,
+    schemaName: 'image_queries',
   })
-
-  if (response.stop_reason === 'refusal') {
-    throw new Error('โมเดลปฏิเสธคำขอหาคำค้นภาพ')
-  }
-
-  const text = response.content.find((block) => block.type === 'text')?.text
-  if (!text) throw new Error('โมเดลไม่ได้ส่งคำค้นภาพกลับมา')
 
   const parsed = JSON.parse(text) as { queries: { scene_index: number; query: string }[] }
   const byIndex = new Map(parsed.queries.map((q) => [q.scene_index, q.query.trim()]))
@@ -377,23 +322,16 @@ export type GeneratedIdea = {
  * แล้วเลี่ยงการเสนอเรื่องเดียวกันในมุมต่างกันเล็กน้อย — เรียกทีละหัวข้อจะได้ของซ้ำ
  */
 export async function generateIdeas(brief: IdeaBrief): Promise<GeneratedIdea[]> {
-  const response = await anthropic().messages.create({
-    model: SCRIPT_MODEL,
-    max_tokens: 4000,
-    thinking: { type: 'adaptive' },
-    output_config: {
-      // คิดหัวข้อไม่ต้องใช้ความพยายามเท่าเขียนสคริปต์ทั้งเรื่อง
-      effort: 'medium',
-      format: { type: 'json_schema', schema: IDEA_SCHEMA },
-    },
+  const text = await complete({
     system: IDEA_SYSTEM,
-    messages: [{ role: 'user', content: ideaContext(brief) }],
+    user: ideaContext(brief),
+    maxTokens: 4000,
+    effort: 'medium',
+    schema: IDEA_SCHEMA,
+    schemaName: 'ideas',
   })
 
-  const block = response.content.find((part) => part.type === 'text')
-  if (!block || block.type !== 'text') throw new Error('โมเดลไม่ได้ตอบเป็นข้อความ')
-
-  const parsed = JSON.parse(block.text) as { ideas: GeneratedIdea[] }
+  const parsed = JSON.parse(text) as { ideas: GeneratedIdea[] }
   return parsed.ideas
 }
 
@@ -430,36 +368,28 @@ promise คือสิ่งที่คนดูจะทำได้หลั
 export async function generateOutline(
   brief: ScriptBrief & { sectionCount: number },
 ): Promise<Outline> {
-  const response = await anthropic().messages.create({
-    model: SCRIPT_MODEL,
-    max_tokens: 4000,
-    thinking: { type: 'adaptive' },
-    output_config: { effort: 'high', format: { type: 'json_schema', schema: OUTLINE_SCHEMA } },
+  const text = await complete({
     system: OUTLINE_SYSTEM,
-    messages: [
-      {
-        role: 'user',
-        content: [
-          `ช่อง: ${brief.channelName}`,
-          brief.niche ? `แนวเนื้อหา: ${brief.niche}` : null,
-          `หัวข้อ: ${brief.title}`,
-          brief.angle ? `มุมที่อยากเล่า: ${brief.angle}` : null,
-          `แบ่งเป็น ${brief.sectionCount} ท่อน`,
-          styleBlock(brief) ? `\n${styleBlock(brief)}` : null,
-          brief.recentTitles.length > 0
-            ? `เคยทำไปแล้ว (ห้ามซ้ำ):\n${brief.recentTitles.map((t) => `- ${t}`).join('\n')}`
-            : null,
-        ]
-          .filter(Boolean)
-          .join('\n'),
-      },
-    ],
+    user: [
+      `ช่อง: ${brief.channelName}`,
+      brief.niche ? `แนวเนื้อหา: ${brief.niche}` : null,
+      `หัวข้อ: ${brief.title}`,
+      brief.angle ? `มุมที่อยากเล่า: ${brief.angle}` : null,
+      `แบ่งเป็น ${brief.sectionCount} ท่อน`,
+      styleBlock(brief) ? `\n${styleBlock(brief)}` : null,
+      brief.recentTitles.length > 0
+        ? `เคยทำไปแล้ว (ห้ามซ้ำ):\n${brief.recentTitles.map((t) => `- ${t}`).join('\n')}`
+        : null,
+    ]
+      .filter(Boolean)
+      .join('\n'),
+    maxTokens: 4000,
+    effort: 'high',
+    schema: OUTLINE_SCHEMA,
+    schemaName: 'outline',
   })
 
-  const block = response.content.find((part) => part.type === 'text')
-  if (!block || block.type !== 'text') throw new Error('โมเดลไม่ได้ตอบเป็นข้อความ')
-
-  return JSON.parse(block.text) as Outline
+  return JSON.parse(text) as Outline
 }
 
 const SECTION_SYSTEM = `คุณเขียนบทพูดหนึ่งท่อนของคลิป YouTube ยาวภาษาไทย
@@ -489,42 +419,32 @@ export async function generateSection(input: {
 }): Promise<string> {
   const section = input.outline.sections[input.index]
 
-  const response = await anthropic().messages.create({
-    model: SCRIPT_MODEL,
-    max_tokens: 8000,
-    thinking: { type: 'adaptive' },
-    output_config: { effort: 'high' },
+  const text = await complete({
     system: SECTION_SYSTEM,
-    messages: [
-      {
-        role: 'user',
-        content: [
-          `ช่อง: ${input.channelName}`,
-          input.niche ? `แนวเนื้อหา: ${input.niche}` : null,
-          `คลิปเรื่อง: ${input.outline.title}`,
-          `ดูจบแล้วต้องทำได้: ${input.outline.promise}`,
-          styleBlock(input) ? `\n${styleBlock(input)}\n` : null,
-          '',
-          'โครงทั้งคลิป:',
-          ...input.outline.sections.map(
-            (s, i) => `${i + 1}. ${s.heading} — ${s.covers}${i === input.index ? '  ← เขียนท่อนนี้' : ''}`,
-          ),
-          '',
-          `ความยาวท่อนนี้: ~${input.targetChars} ตัวอักษร`,
-          input.previousTail
-            ? `\nท้ายท่อนก่อนหน้า (เขียนต่อให้ลื่น):\n"...${input.previousTail}"`
-            : '\nนี่คือท่อนแรก — เปิดเรื่องด้วยประเด็นที่คนดูสนใจภายในสองประโยคแรก',
-        ]
-          .filter(Boolean)
-          .join('\n'),
-      },
-    ],
+    user: [
+      `ช่อง: ${input.channelName}`,
+      input.niche ? `แนวเนื้อหา: ${input.niche}` : null,
+      `คลิปเรื่อง: ${input.outline.title}`,
+      `ดูจบแล้วต้องทำได้: ${input.outline.promise}`,
+      styleBlock(input) ? `\n${styleBlock(input)}\n` : null,
+      '',
+      'โครงทั้งคลิป:',
+      ...input.outline.sections.map(
+        (s, i) => `${i + 1}. ${s.heading} — ${s.covers}${i === input.index ? '  ← เขียนท่อนนี้' : ''}`,
+      ),
+      '',
+      `ความยาวท่อนนี้: ~${input.targetChars} ตัวอักษร`,
+      input.previousTail
+        ? `\nท้ายท่อนก่อนหน้า (เขียนต่อให้ลื่น):\n"...${input.previousTail}"`
+        : '\nนี่คือท่อนแรก — เปิดเรื่องด้วยประเด็นที่คนดูสนใจภายในสองประโยคแรก',
+    ]
+      .filter(Boolean)
+      .join('\n'),
+    maxTokens: 8000,
+    effort: 'high',
   })
-
-  const block = response.content.find((part) => part.type === 'text')
-  if (!block || block.type !== 'text') throw new Error('โมเดลไม่ได้ตอบเป็นข้อความ')
 
   if (!section) throw new Error(`ไม่มีท่อนที่ ${input.index} ในโครง`)
 
-  return block.text.trim()
+  return text.trim()
 }

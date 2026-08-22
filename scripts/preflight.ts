@@ -240,16 +240,47 @@ async function checkOpenAi(): Promise<Result> {
   if (!response.ok) return fail(`(${response.status}) ${(await response.text()).slice(0, 120)}`)
 
   const body = (await response.json()) as { data?: { id: string }[] }
-  const want = process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2'
-  const has = (body.data ?? []).some((m) => m.id === want)
+  const ids = new Set((body.data ?? []).map((m) => m.id))
 
   /**
    * มีคีย์ไม่ได้แปลว่าเรียกโมเดลนั้นได้ — บัญชีที่ยังไม่ได้เติมเงินหรืออยู่ tier ต่ำ
-   * จะไม่เห็นโมเดลสร้างภาพ แล้วไปพังตอนวาดภาพใบแรกของคลิป
+   * จะไม่เห็นโมเดลบางตัว แล้วไปพังตอนใช้งานจริงกลางคลิป
    */
-  return has
-    ? ok(`คีย์ใช้ได้ · มี ${want}`)
-    : warn(`คีย์ใช้ได้ แต่บัญชีนี้ยังไม่เห็นโมเดล ${want}`, 'ตรวจว่าเติมเงินใน billing แล้ว')
+  const wants: [string, string, boolean][] = [
+    ['ภาพ', process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2', true],
+    ['เสียง', process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts', process.env.TTS_PROVIDER === 'openai'],
+    ['เขียนสคริปต์', process.env.OPENAI_TEXT_MODEL || 'gpt-5.6-terra', process.env.LLM_PROVIDER === 'openai'],
+  ]
+
+  const missing = wants.filter(([, id, required]) => required && !ids.has(id))
+  const present = wants.filter(([, id]) => ids.has(id)).map(([label]) => label)
+
+  if (missing.length > 0) {
+    return fail(
+      `บัญชีนี้ไม่มีโมเดล: ${missing.map(([label, id]) => `${id} (${label})`).join(', ')}`,
+      `รุ่นที่บัญชีนี้เรียกได้จริงมี ${ids.size} ตัว — ตั้งชื่อรุ่นให้ตรงหรือเติมเงินใน billing`,
+    )
+  }
+
+  return ok(present.length > 0 ? `คีย์ใช้ได้ · มีโมเดล${present.join('/')}` : 'คีย์ใช้ได้')
+}
+
+/** ผู้ให้บริการที่เลือกไว้ตอนนี้ — ให้เห็นชัดว่ากำลังจะใช้อะไร ไม่ต้องไปเดาจาก env */
+function checkProviders(): Result {
+  const llm = process.env.LLM_PROVIDER === 'openai' ? 'OpenAI' : 'Anthropic'
+  const tts = process.env.TTS_PROVIDER === 'openai' ? 'OpenAI' : 'Google'
+
+  const detail = `เขียนสคริปต์: ${llm} · เสียง: ${tts} · ภาพ: เลือกต่อช่องที่หน้าตั้งค่า`
+
+  /**
+   * เตือนเมื่อเลือกเสียง OpenAI — ภาษาไทยยังไม่มีใครยืนยันคุณภาพ
+   * (เอกสารบอกแค่ "50+ ภาษา" ไม่ได้ระบุไทยไว้ชัด) ต้องฟังเองก่อน
+   */
+  if (process.env.TTS_PROVIDER === 'openai') {
+    return warn(detail, 'เสียงไทยของ OpenAI ยังไม่ยืนยันคุณภาพ — ฟังเทียบก่อน: pnpm voice-sample-openai')
+  }
+
+  return ok(detail)
 }
 
 async function checkFfmpeg(): Promise<Result[]> {
@@ -378,6 +409,7 @@ const CHECKS: [string, () => Promise<Result | Result[]>][] = [
   ['Pexels (ภาพสต็อก)', checkPexels],
   ['OpenAI (วาดภาพ)', checkOpenAi],
   ['ffmpeg + ฟอนต์ซับ', checkFfmpeg],
+  ['ผู้ให้บริการที่เลือก', async () => checkProviders()],
 ]
 
 console.log('\nตรวจการตั้งค่า yt-factory\n')

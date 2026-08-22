@@ -48,6 +48,23 @@ function voice() {
 }
 
 /**
+ * เลือกผู้ให้บริการเสียงพากย์
+ *
+ * ตั้งที่ระดับ env ไม่ใช่ต่อช่อง เพราะ "ชื่อเสียง" ก็อยู่ที่ env อยู่แล้ว
+ * แยกผู้ให้บริการเป็นต่อช่องแต่ชื่อเสียงเป็นระดับระบบจะไม่สมเหตุสมผล
+ *
+ * ⚠️ ภาษาไทยของ OpenAI ยังไม่มีใครยืนยันคุณภาพ (เอกสารไม่ได้ระบุไทยไว้ชัด)
+ * ฟังเทียบเองก่อนเปลี่ยน: pnpm voice-sample-openai
+ */
+async function speak(text: string) {
+  if (process.env.TTS_PROVIDER === 'openai') {
+    const { synthesizeOpenAi } = await import('@/lib/tts-openai')
+    return synthesizeOpenAi(text)
+  }
+  return synthesize(text, { voice: voice() })
+}
+
+/**
  * ฟอนต์ซับต่างกันตามเครื่องที่รัน worker
  *
  * ค่าเริ่มต้น Loma มีเฉพาะบน Linux — เครื่องอื่นตั้งผ่าน env (Windows: "Leelawadee UI")
@@ -415,7 +432,7 @@ async function collectAudio(
   const durations: number[] = []
 
   for (const scene of scenes) {
-    const { bytes, durationSec } = await synthesize(scene.text, { voice: voice() })
+    const { bytes, durationSec } = await speak(scene.text)
     const path = join(workDir, `scene-${scene.index}.wav`)
     await writeFile(path, bytes)
 

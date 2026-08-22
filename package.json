@@ -12,6 +12,7 @@
     "worker": "tsx worker/index.ts",
     "voices": "tsx scripts/voices.ts",
     "voice-sample": "tsx scripts/voice-sample.ts",
+    "voice-sample-openai": "tsx scripts/voice-sample-openai.ts",
     "preflight": "tsx scripts/preflight.ts",
     "db:types": "supabase gen types typescript --linked > src/lib/database.types.ts",
     "test": "vitest run"
