@@ -15,7 +15,7 @@
  */
 import { revalidatePath } from 'next/cache'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { createProjectSchema, generateVideoSchema } from '@/lib/video/schema'
+import { createProjectSchema, generateVideoSchema, planProjectSchema } from '@/lib/video/schema'
 import { generateRateLimiter } from '@/lib/video/rate-limit'
 import { cancelGeneration, dispatchGeneration } from '@/lib/video/orchestrator'
 import { VideoProviderError, type VideoProviderId } from '@/lib/video/types'
@@ -233,6 +233,75 @@ export async function generateVideo(_prev: ActionState, formData: FormData): Pro
     revalidatePath('/dashboard/video')
     return { error: readableError(error), ok: null }
   }
+}
+
+/**
+ * สั่ง AI Marketing Director ให้วางแผนทั้งชิ้น
+ *
+ * เข้าคิวแทนที่จะเรียกโมเดลตรงนี้ เพราะการวางแผนใช้เวลาเป็นนาที (effort สูง
+ * สตอรีบอร์ดหลายช็อต) ซึ่งเกินเวลาที่ server action มีให้บนโฮสต์ส่วนใหญ่
+ * เรียกตรงนี้แล้วจะได้ timeout ที่ไม่บอกอะไร ทั้งที่โมเดลยังทำงานอยู่และคิดเงินไปแล้ว
+ */
+export async function planProject(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const found = await actor()
+  if ('error' in found) return { error: found.error, ok: null }
+
+  const parsed = planProjectSchema.safeParse({
+    projectId: formData.get('projectId'),
+    notes: formData.get('notes') || undefined,
+  })
+
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? 'ข้อมูลไม่ถูกต้อง', ok: null }
+  }
+
+  const supabase = await createClient()
+
+  const { data: project } = await supabase
+    .from('video_projects')
+    .select('id, org_id, objective')
+    .eq('id', parsed.data.projectId)
+    .maybeSingle()
+
+  if (!project || project.org_id !== found.orgId) {
+    return { error: 'ไม่พบโปรเจคนี้ หรือไม่มีสิทธิ์เข้าถึง', ok: null }
+  }
+
+  /**
+   * ไม่มีเป้าหมายธุรกิจ = ไม่มีอะไรให้ Director เริ่มคิด
+   * ปล่อยผ่านแล้วโมเดลจะเดาเป้าหมายให้เอง ซึ่งได้แผนที่ดูดีแต่ไม่ใช่ธุรกิจของผู้ใช้
+   * — แย่กว่าไม่ได้แผนเลย เพราะอ่านแล้วเชื่อ
+   */
+  if (!project.objective?.trim()) {
+    return { error: 'ยังไม่ได้เขียนเป้าหมายธุรกิจของงานนี้ — Director ไม่มีอะไรให้เริ่มคิด', ok: null }
+  }
+
+  // หนึ่งโปรเจคหนึ่งแผน · handler ก็ตรวจซ้ำอีกชั้น (กันสองคนกดพร้อมกัน)
+  const { data: existing } = await supabase
+    .from('video_scripts')
+    .select('id')
+    .eq('project_id', project.id)
+    .limit(1)
+    .maybeSingle()
+
+  if (existing) return { error: null, ok: 'งานนี้มีแผนอยู่แล้ว' }
+
+  const admin = createServiceClient()
+
+  try {
+    await enqueueJob(admin, found.orgId, 'video_plan', {
+      project_id: project.id,
+      ...(parsed.data.notes ? { notes: parsed.data.notes } : {}),
+    })
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : 'เข้าคิวไม่สำเร็จ',
+      ok: null,
+    }
+  }
+
+  revalidatePath('/dashboard/video')
+  return { error: null, ok: 'เข้าคิวแล้ว — AI กำลังวางแผน ใช้เวลาสักครู่' }
 }
 
 /** ยกเลิกงาน เจ้าที่ไม่รองรับจะบอกตรง ไม่ใช่เงียบไปเฉย */

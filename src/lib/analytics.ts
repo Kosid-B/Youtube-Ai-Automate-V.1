@@ -30,6 +30,7 @@ export type AnalyticsEvent =
   | 'render_failed'
   | 'job_dead'
   // ── คลิปโฆษณาที่ผู้ให้บริการสร้างให้ (คนละสายกับ render ข้างบน) ──
+  | 'ad_video_planned'
   | 'ad_video_requested'
   | 'ad_video_completed'
   | 'ad_video_failed'

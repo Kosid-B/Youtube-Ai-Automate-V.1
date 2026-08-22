@@ -39,8 +39,21 @@ export const generateVideoSchema = z.object({
   idempotencyKey: z.string().trim().min(8).max(128),
 })
 
+/**
+ * สั่งให้ AI วางแผนโฆษณาให้ทั้งชิ้น
+ *
+ * ไม่มีช่องความยาว ช่องจำนวนช็อต หรือช่องแพลตฟอร์มให้กรอกตรงนี้ — ทั้งหมดอ่านจาก
+ * โปรเจคฝั่งเซิร์ฟเวอร์ ผู้ใช้ตั้งค่าพวกนั้นตอนสร้างโปรเจคไปแล้ว
+ * รับซ้ำที่นี่ = มีสองแหล่งความจริงที่ขัดกันได้ และไม่มีอะไรบอกว่าอันไหนถูก
+ */
+export const planProjectSchema = z.object({
+  projectId: z.uuid('รหัสโปรเจคไม่ถูกต้อง'),
+  notes: z.string().trim().max(1000, 'โน้ตยาวเกิน 1000 ตัวอักษร').optional(),
+})
+
 export const generationIdSchema = z.object({ generationId: z.uuid() })
 export const projectIdSchema = z.object({ projectId: z.uuid() })
 
 export type CreateProjectInput = z.infer<typeof createProjectSchema>
 export type GenerateVideoInputDto = z.infer<typeof generateVideoSchema>
+export type PlanProjectInput = z.infer<typeof planProjectSchema>

@@ -3,9 +3,16 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { AutoRefresh } from '@/components/auto-refresh'
 import { StatusPill } from '@/components/status-pill'
-import { CancelButton, CreateProjectForm, GenerateForm } from './forms'
+import { CancelButton, CreateProjectForm, GenerateForm, PlanForm, StoryboardPanel } from './forms'
 import { availableProviders } from '@/lib/video/registry'
 import { maxCostUsd, maxDurationSeconds } from '@/lib/video/router'
+import {
+  planFromRow,
+  planProblems,
+  platformSeconds,
+  type MarketingBrief,
+  type Platform,
+} from '@/lib/video/director'
 import type { Tone } from '@/lib/pipeline'
 
 export const dynamic = 'force-dynamic'
@@ -50,7 +57,8 @@ export default async function VideoDashboard() {
   if (!memberships?.[0]) redirect('/onboarding')
 
   // RLS คัดให้เหลือเฉพาะองค์กรที่ผู้ใช้เป็นสมาชิก ไม่ต้องกรอง org เองในคิวรี
-  const [{ data: projects }, { data: generations }] = await Promise.all([
+  const [{ data: projects }, { data: generations }, { data: scripts }, { data: planJobs }] =
+    await Promise.all([
     supabase
       .from('video_projects')
       .select('id, title, objective, audience, platform, aspect_ratio, status, created_at')
@@ -63,15 +71,38 @@ export default async function VideoDashboard() {
       )
       .order('created_at', { ascending: false })
       .limit(50),
+    supabase
+      .from('video_scripts')
+      .select('id, project_id, hook, script, cta, storyboard, created_at')
+      .order('created_at', { ascending: false })
+      .limit(20),
+    /**
+     * งานวางแผนที่ยังไม่จบ — ใช้บอกผู้ใช้ว่ากำลังทำอยู่ ไม่ใช่ปุ่มไม่ทำงาน
+     *
+     * ไม่มีตรงนี้แล้วหน้าจะเหมือนเดิมทุกอย่างหลังกดปุ่ม ซึ่งอ่านได้อย่างเดียวว่าพัง
+     * แล้วผู้ใช้จะกดซ้ำ — ซึ่งตัดเครดิตอีกรอบ
+     */
+    supabase
+      .from('jobs')
+      .select('id, kind, status, payload')
+      .eq('kind', 'video_plan')
+      .in('status', ['queued', 'claimed'])
+      .limit(20),
   ])
 
   const providers = availableProviders()
   const active = (generations ?? []).filter((g) => g.status === 'queued' || g.status === 'running')
 
+  const planning = new Set(
+    (planJobs ?? [])
+      .map((job) => (job.payload as { project_id?: string } | null)?.project_id)
+      .filter((id): id is string => typeof id === 'string'),
+  )
+
   return (
     <main className="mx-auto max-w-2xl px-5 py-10 sm:px-6">
       {/* Doherty Threshold: งานกินเวลาเป็นนาที ให้หน้าจอขยับเองแทนที่จะให้คนกดรีเฟรช */}
-      <AutoRefresh enabled={active.length > 0} />
+      <AutoRefresh enabled={active.length > 0 || planning.size > 0} />
 
       <header>
         {/* Jakob's Law: ลิงก์กลับมุมบนซ้ายเหมือนทุกเว็บ ไม่ต้องเรียนรู้ใหม่ */}
@@ -108,6 +139,26 @@ export default async function VideoDashboard() {
 
       {(projects ?? []).map((project) => {
         const mine = (generations ?? []).filter((g) => g.project_id === project.id)
+        const row = (scripts ?? []).find((s) => s.project_id === project.id)
+        const plan = row ? planFromRow(row) : null
+
+        /**
+         * คำนวณคำเตือนใหม่ทุกครั้งที่เปิดหน้า ไม่เก็บลงตาราง
+         *
+         * planProblems บริสุทธิ์ จึงคิดใหม่ได้ฟรี · เก็บลงตารางแล้ววันที่กติกาเปลี่ยน
+         * แผนเก่าจะยังโชว์คำเตือนชุดเดิมค้างไว้ ทั้งที่ไม่ใช่ปัญหาแล้ว
+         * (หรือแย่กว่า: ไม่โชว์ปัญหาใหม่ที่เพิ่งกลายเป็นปัญหา)
+         */
+        const brief: MarketingBrief = {
+          title: project.title,
+          objective: project.objective,
+          audience: project.audience,
+          platform: project.platform as Platform,
+          aspect: project.aspect_ratio,
+          notes: plan?.notes ?? null,
+          totalSeconds: platformSeconds(project.platform as Platform),
+        }
+        const problems = plan ? planProblems(plan, brief) : []
 
         return (
           <Card
@@ -122,12 +173,65 @@ export default async function VideoDashboard() {
               <p className="mt-1 text-sm text-ink-muted">กลุ่มเป้าหมาย: {project.audience}</p>
             )}
 
-            {providers.length > 0 && (
-              <GenerateForm
-                projectId={project.id}
-                aspect={project.aspect_ratio as '9:16' | '16:9'}
-              />
+            {plan ? (
+              <div className="mt-4 rounded-lg border border-line bg-surface-2 px-3.5 py-3">
+                {/* hook มาก่อนทุกอย่าง เพราะเป็นสิ่งเดียวที่คนดูจะได้ยินแน่ ๆ */}
+                <p className="text-xs text-ink-muted">3 วินาทีแรก</p>
+                <p className="mt-0.5 font-medium leading-relaxed">{plan.hook}</p>
+
+                {plan.icp && (
+                  <p className="mt-2.5 text-xs text-ink-muted">พูดกับ: {plan.icp}</p>
+                )}
+                {plan.pain && (
+                  <p className="mt-0.5 text-xs text-ink-muted">ความเจ็บ: {plan.pain}</p>
+                )}
+
+                {plan.script && (
+                  <p className="mt-2.5 whitespace-pre-line text-sm leading-relaxed">
+                    {plan.script}
+                  </p>
+                )}
+
+                {plan.cta && <p className="mt-2.5 text-sm font-medium">{plan.cta}</p>}
+              </div>
+            ) : planning.has(project.id) ? (
+              <p className="mt-4 text-sm text-ink-muted">
+                AI กำลังวางแผนอยู่ — หน้านี้จะอัปเดตเองเมื่อเสร็จ
+              </p>
+            ) : (
+              project.objective && <PlanForm projectId={project.id} />
             )}
+
+            {/*
+              Postel's Law: คำเตือนต้องบอกว่าให้ทำอะไรต่อ ไม่ใช่บอกว่าผิด
+              และต้องอยู่เหนือปุ่มสั่งสร้าง ไม่ใช่ใต้ — ใต้ปุ่มคือหลังจากจ่ายเงินไปแล้ว
+            */}
+            {problems.length > 0 && (
+              <div className="mt-3 rounded-lg border px-3.5 py-3" style={{ borderColor: 'var(--color-block)' }}>
+                <p className="text-sm font-medium">ตรวจก่อนสั่งสร้าง {problems.length} ข้อ</p>
+                <ul className="mt-1.5 space-y-1">
+                  {problems.map((problem) => (
+                    <li key={problem} className="text-xs leading-relaxed text-ink-muted">
+                      · {problem}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {providers.length > 0 &&
+              (plan && plan.storyboard.length > 0 ? (
+                <StoryboardPanel
+                  projectId={project.id}
+                  aspect={project.aspect_ratio as '9:16' | '16:9'}
+                  shots={plan.storyboard}
+                />
+              ) : (
+                <GenerateForm
+                  projectId={project.id}
+                  aspect={project.aspect_ratio as '9:16' | '16:9'}
+                />
+              ))}
 
             {mine.length > 0 && (
               <ul className="mt-4 divide-y divide-line border-t border-line">

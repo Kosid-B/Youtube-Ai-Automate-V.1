@@ -107,6 +107,8 @@ export type JobKind =
   | 'metrics_sync'
   /** วนถามผู้ให้บริการวิดีโอจนงานจบ แล้วโหลดไฟล์เก็บ (jobs.kind เป็น text ไม่ต้อง migrate) */
   | 'video_poll'
+  /** แปลงเป้าหมายธุรกิจเป็นแผนโฆษณา (ICP → hook → บท → สตอรีบอร์ด) */
+  | 'video_plan'
 
 export type ContentFeaturesRow = {
   id: string

@@ -1,8 +1,9 @@
 'use client'
 
 import { useActionState, useId, useState } from 'react'
-import { cancelVideo, createProject, generateVideo, type ActionState } from './actions'
+import { cancelVideo, createProject, generateVideo, planProject, type ActionState } from './actions'
 import { PLATFORMS } from '@/lib/video/schema'
+import type { StoryboardShot } from '@/lib/video/director'
 
 const INITIAL: ActionState = { error: null, ok: null }
 
@@ -134,13 +135,21 @@ const POLICIES = [
 export function GenerateForm({
   projectId,
   aspect,
+  initialPrompt = '',
+  initialSeconds = 8,
+  /** ต่อท้ายกุญแจกันสั่งซ้ำ — เปลี่ยนช็อตแล้วต้องนับเป็นคนละคำสั่ง ไม่ใช่การกดซ้ำ */
+  seed = '',
 }: {
   projectId: string
   aspect: '9:16' | '16:9'
+  initialPrompt?: string
+  initialSeconds?: number
+  seed?: string
 }) {
   const [state, action, pending] = useActionState(generateVideo, INITIAL)
   const [policy, setPolicy] = useState<string>('auto')
-  const [seconds, setSeconds] = useState(8)
+  const [prompt, setPrompt] = useState(initialPrompt)
+  const [seconds, setSeconds] = useState(initialSeconds)
 
   /**
    * กุญแจกันสั่งซ้ำ สร้างครั้งเดียวตอนฟอร์มถูกวาด
@@ -153,7 +162,7 @@ export function GenerateForm({
       <input type="hidden" name="projectId" value={projectId} />
       <input type="hidden" name="aspect" value={aspect} />
       <input type="hidden" name="policy" value={policy} />
-      <input type="hidden" name="idempotencyKey" value={`${projectId}:${idempotencyKey}`} />
+      <input type="hidden" name="idempotencyKey" value={`${projectId}:${idempotencyKey}:${seed}`} />
 
       <div>
         <label htmlFor="prompt" className="block text-sm font-medium">
@@ -169,6 +178,8 @@ export function GenerateForm({
           rows={3}
           minLength={10}
           maxLength={2000}
+          value={prompt}
+          onChange={(event) => setPrompt(event.target.value)}
           placeholder="เช่น มุมกว้างในโรงงานตอนเช้า แสงส่องผ่านหน้าต่างสูง คนงานเดินตรวจสายการผลิต"
           className={`${FIELD} mt-1.5`}
         />
@@ -246,5 +257,115 @@ export function CancelButton({ generationId }: { generationId: string }) {
       </button>
       <Feedback state={state} />
     </form>
+  )
+}
+
+/**
+ * สั่ง AI วางแผนโฆษณาให้ทั้งชิ้น
+ *
+ * ช่องโน้ตเป็นตัวเลือก ไม่ใช่ช่องบังคับ — คนที่กดปุ่มนี้คือคนที่ไม่อยากเขียนคำสั่งเอง
+ * ตั้งช่องบังคับไว้ตรงนี้ก็เท่ากับย้ายงานเดิมมาไว้ที่อื่น
+ */
+export function PlanForm({ projectId }: { projectId: string }) {
+  const [state, action, pending] = useActionState(planProject, INITIAL)
+
+  return (
+    <form action={action} className="mt-3 space-y-3">
+      <input type="hidden" name="projectId" value={projectId} />
+
+      <div>
+        <label htmlFor={`notes-${projectId}`} className="block text-sm font-medium">
+          อยากบอกอะไรเพิ่มไหม (ไม่ใส่ก็ได้)
+        </label>
+        <textarea
+          id={`notes-${projectId}`}
+          name="notes"
+          rows={2}
+          maxLength={1000}
+          placeholder="เช่น เน้นว่าเริ่มได้เลยไม่ต้องรอ ไม่ต้องพูดถึงราคา"
+          className={`${FIELD} mt-1.5`}
+        />
+      </div>
+
+      <button
+        type="submit"
+        disabled={pending}
+        className={BUTTON}
+        style={{ color: 'var(--color-base)', background: 'var(--color-ink)' }}
+      >
+        {pending ? 'กำลังเข้าคิว…' : 'ให้ AI วางแผนโฆษณา'}
+      </button>
+      <p className="text-xs text-ink-muted">
+        AI จะไล่จากเป้าหมายธุรกิจ → ลูกค้าที่ใช่ → ความเจ็บของเขา → hook → บทพูด → สตอรีบอร์ด
+        แล้วคุณค่อยเลือกว่าจะสร้างช็อตไหน
+      </p>
+      <Feedback state={state} />
+    </form>
+  )
+}
+
+/**
+ * สตอรีบอร์ด + ฟอร์มสั่งสร้าง อยู่ในคอมโพเนนต์เดียวกันเพราะต้องส่งค่าให้กัน
+ *
+ * กดช็อตแล้วคำสั่งภาพเด้งลงฟอร์มทันที — ไม่ต้องคัดลอกวาง
+ * (การคัดลอกวางบนมือถือคือจุดที่คนเลิกใช้ ไม่ใช่เรื่องความสวยงาม)
+ */
+export function StoryboardPanel({
+  projectId,
+  aspect,
+  shots,
+}: {
+  projectId: string
+  aspect: '9:16' | '16:9'
+  shots: StoryboardShot[]
+}) {
+  const [picked, setPicked] = useState<number | null>(null)
+  const shot = picked === null ? null : (shots[picked] ?? null)
+
+  return (
+    <div className="mt-4">
+      <p className="text-sm font-medium">สตอรีบอร์ด {shots.length} ช็อต</p>
+
+      <ol className="mt-2 space-y-2">
+        {shots.map((item, index) => (
+          <li
+            key={item.shot}
+            className={`rounded-lg border px-3 py-2.5 transition ${
+              picked === index ? 'border-ink bg-surface-2' : 'border-line'
+            }`}
+          >
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="text-sm font-medium">ช็อต {item.shot}</span>
+              <span className="text-xs text-ink-muted">{item.seconds} วินาที</span>
+            </div>
+
+            {item.voiceover && (
+              <p className="mt-1 text-sm leading-relaxed">“{item.voiceover}”</p>
+            )}
+
+            {/* คำสั่งภาพเป็นภาษาอังกฤษโดยตั้งใจ — โมเดลวิดีโอเข้าใจอังกฤษดีกว่ามาก */}
+            <p className="mt-1 text-xs leading-relaxed text-ink-muted">{item.prompt}</p>
+
+            <button
+              type="button"
+              onClick={() => setPicked(index)}
+              className="mt-2 rounded-lg border border-line bg-surface-2 px-3 py-1.5 text-xs font-medium transition hover:border-ink-muted"
+            >
+              {picked === index ? 'เลือกช็อตนี้อยู่' : 'ใส่ช็อตนี้ลงฟอร์ม'}
+            </button>
+          </li>
+        ))}
+      </ol>
+
+      {/* key เปลี่ยน = ฟอร์มเริ่มใหม่พร้อมค่าใหม่ · seed ทำให้กุญแจกันสั่งซ้ำไม่ชนกันข้ามช็อต */}
+      <GenerateForm
+        key={picked ?? 'blank'}
+        projectId={projectId}
+        aspect={aspect}
+        initialPrompt={shot?.prompt ?? ''}
+        initialSeconds={shot?.seconds ?? 8}
+        seed={String(picked ?? 'blank')}
+      />
+    </div>
   )
 }

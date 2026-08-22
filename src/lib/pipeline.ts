@@ -180,6 +180,7 @@ const JOB_LABEL: Record<JobKind, string> = {
   youtube_upload: 'ส่งขึ้น YouTube',
   metrics_sync: 'ดึงตัวเลขผลงาน',
   video_poll: 'รอคลิปโฆษณา',
+  video_plan: 'วางแผนโฆษณา',
 }
 
 export function jobLabel(kind: JobKind): string {

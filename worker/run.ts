@@ -15,6 +15,7 @@ import { videoRender } from './handlers/video-render'
 import { youtubeUpload } from './handlers/youtube-upload'
 import { metricsSync } from './handlers/metrics-sync'
 import { videoPoll } from './handlers/video-poll'
+import { videoPlan } from './handlers/video-plan'
 import type { JobContext } from './job-context'
 
 const WORKER_ID = process.env.WORKER_ID ?? `worker-${process.pid}`
@@ -37,6 +38,7 @@ const HANDLERS: { [K in JobKind]: Handler<K> } = {
   youtube_upload: youtubeUpload,
   metrics_sync: metricsSync,
   video_poll: videoPoll,
+  video_plan: videoPlan,
 }
 
 let running = true
