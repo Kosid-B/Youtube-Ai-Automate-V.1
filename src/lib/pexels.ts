@@ -167,6 +167,17 @@ export function creditBlock(credits: readonly PhotoCredit[]): string {
   return ['ภาพประกอบจาก Pexels (pexels.com)', ...lines].join('\n')
 }
 
+/**
+ * บรรทัดเปิดเผยว่าภาพประกอบสร้างด้วย AI
+ *
+ * ไม่ใช่มารยาท แต่เป็นข้อบังคับ — YouTube ให้เปิดเผยเนื้อหาสังเคราะห์ที่ดูสมจริง
+ * (นโยบาย Inauthentic Content) และถึงจะติ๊กช่อง "altered content" ตอนอัปโหลดแล้ว
+ * การเขียนไว้ในคำอธิบายด้วยก็ยังคุ้ม เพราะคนเห็นก่อนกดดู ไม่ต้องรอ YouTube ขึ้นป้ายให้
+ *
+ * ⚠️ ระบบเติมบรรทัดนี้ให้อัตโนมัติ ห้ามลบออกเพื่อให้คลิปดู "จริง" กว่าเดิม
+ */
+export const GENERATED_IMAGE_NOTICE = 'ภาพประกอบในคลิปนี้สร้างด้วย AI'
+
 export async function downloadPhoto(
   photo: PexelsPhoto,
   fetchImpl: typeof fetch = fetch,

@@ -14,6 +14,9 @@ export type ScriptStatus = 'draft' | 'checking' | 'ready' | 'blocked'
  * (เคยประกาศ VideoFormat ซ้ำมาแล้ว ค่าที่เพิ่มใหม่ผ่าน typecheck ทั้งที่ insert ไม่ได้)
  */
 export type ScriptStyle = 'informative' | 'direct'
+
+/** แหล่งภาพประกอบ — ต้องตรงกับ enum image_source ในฐานข้อมูล */
+export type ImageSource = 'pexels' | 'generated'
 export type VideoStatus =
   | 'queued'
   | 'rendering'
@@ -90,6 +93,8 @@ export type ChannelRow = {
   script_style: ScriptStyle
   /** [{claim, source}] — โมเดลใช้ตัวเลขได้เฉพาะในรายการนี้ (ดู lib/proof.ts) */
   proof_points: Json
+  /** pexels = ค้นภาพสต็อก · generated = ให้ AI วาด (ดู lib/image-gen.ts) */
+  image_source: ImageSource
   created_at: string
 }
 
@@ -184,9 +189,10 @@ export type VideoAssetRow = {
   scene_index: number
   provider: string
   provider_id: string
-  photographer: string
+  /** null ได้เฉพาะภาพที่ AI วาด — ภาพจาก Pexels ถูก check constraint บังคับให้มี */
+  photographer: string | null
   photographer_url: string | null
-  source_url: string
+  source_url: string | null
   storage_path: string | null
   query: string | null
   created_at: string
@@ -370,6 +376,7 @@ export type Database = {
       video_format: VideoFormat
       script_status: ScriptStatus
       script_style: ScriptStyle
+      image_source: ImageSource
       video_status: VideoStatus
       job_status: JobStatus
     }

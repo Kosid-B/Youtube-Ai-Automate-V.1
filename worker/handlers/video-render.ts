@@ -7,9 +7,17 @@ import { promisify } from 'node:util'
 import type { WorkerClient } from '../supabase'
 import { heartbeatJob, type JobPayloads } from '@/lib/jobs'
 import type { JobContext } from '../run'
-import { sceneImageQueries } from '@/lib/anthropic'
+import { sceneImageQueries, shotImagePrompts } from '@/lib/anthropic'
 import { buildConcatCommand, buildFfmpegCommand } from '@/lib/ffmpeg'
-import { creditBlock, downloadPhoto, pickPhoto, searchPhotos, type PexelsPhoto } from '@/lib/pexels'
+import {
+  creditBlock,
+  downloadPhoto,
+  pickPhoto,
+  searchPhotos,
+  GENERATED_IMAGE_NOTICE,
+  type PexelsPhoto,
+} from '@/lib/pexels'
+import { DEFAULT_QUALITY, generateImage, imageCostUsd, IMAGE_MODEL } from '@/lib/image-gen'
 import { buildRenderPlan } from '@/lib/render-plan'
 import { concatListFile, planChunks } from '@/lib/render-chunks'
 import { planShots, shotSceneCounts, shotText, type Shot } from '@/lib/shots'
@@ -90,7 +98,7 @@ export async function videoRender(
 
   const { data: channel } = await db
     .from('channels')
-    .select('niche, cta_template')
+    .select('niche, cta_template, image_source')
     .eq('id', video.channel_id)
     .single()
 
@@ -126,10 +134,13 @@ export async function videoRender(
      */
     const shots = planShots(audio.durations, spec.shotSeconds)
 
-    const images = await collectImages(
-      db, video, scenes, shots, channel?.niche ?? null, workDir,
-      spec.orientation, minPhotoSize(video.format),
-    )
+    const images =
+      channel?.image_source === 'generated'
+        ? await drawImages(db, video, scenes, shots, channel.niche, workDir, spec.orientation)
+        : await collectImages(
+            db, video, scenes, shots, channel?.niche ?? null, workDir,
+            spec.orientation, minPhotoSize(video.format),
+          )
 
     /**
      * เรนเดอร์ทีละช่วงแล้วต่อกัน — คำสั่งเดียวรวดเดียวใช้ไม่ได้กับคลิปยาว
@@ -233,7 +244,11 @@ export async function videoRender(
       cta: channel?.cta_template ?? null,
       chapters: chapterText(script.originality, scenes, audio.durations),
       body: video.description ?? null,
-      credits: creditBlock(images.credits),
+      // ภาพที่ AI วาดไม่มีช่างภาพให้เครดิต แต่ต้องเปิดเผยว่าเป็นภาพ AI แทน
+      credits:
+        channel?.image_source === 'generated'
+          ? GENERATED_IMAGE_NOTICE
+          : creditBlock(images.credits),
     })
 
     const ctaProblem = ctaWarning(channel?.cta_template ?? null)
@@ -528,4 +543,105 @@ function pad(index: number): string {
 
 function round(seconds: number): number {
   return Math.round(seconds * 1000) / 1000
+}
+
+/**
+ * ให้ AI วาดภาพ ใบละช็อต
+ *
+ * idempotent เหมือนทาง Pexels แต่ด้วยกลไกต่างกัน — Pexels ใช้ provider_id
+ * เรียกภาพเดิมกลับมาได้เสมอ ส่วนโมเดลวาดภาพไม่ deterministic สั่ง prompt เดิม
+ * ได้ภาพใหม่ทุกครั้ง จึงต้องเก็บไฟล์ที่วาดแล้วขึ้น Storage แล้วดึงกลับมาใช้ตอน retry
+ * ไม่งั้น retry หนึ่งครั้ง = จ่ายค่าวาดภาพอีกรอบและได้คลิปที่ภาพไม่เหมือนเดิม
+ */
+async function drawImages(
+  db: WorkerClient,
+  video: { id: string; org_id: string; title: string },
+  scenes: Scene[],
+  shots: Shot[],
+  niche: string | null,
+  workDir: string,
+  orientation: 'landscape' | 'portrait',
+): Promise<CollectedImages> {
+  const { data: existing } = await db
+    .from('video_assets')
+    .select('scene_index, storage_path, query')
+    .eq('video_id', video.id)
+
+  const known = new Map((existing ?? []).map((row) => [row.scene_index, row]))
+
+  const shotScenes = shots.map((shot) => ({
+    index: scenes[shot.start].index,
+    text: shotText(scenes, shot),
+  }))
+
+  const missing = shotScenes.filter((shot) => !known.get(shot.index)?.storage_path)
+  const prompts = new Map<number, string>()
+
+  if (missing.length > 0) {
+    // เรียกครั้งเดียวทุกใบที่ยังขาด เพื่อให้โมเดลคุมให้เป็นชุดเดียวกันและไม่ซ้ำกันเอง
+    const generated = await shotImagePrompts(missing, { title: video.title, niche })
+    for (const item of generated) prompts.set(item.sceneIndex, item.query)
+
+    console.log(
+      `[video_render] ${video.id} จะวาดภาพ ${missing.length} ใบ ` +
+        `(~$${imageCostUsd(missing.length).toFixed(2)})`,
+    )
+  }
+
+  const paths: string[] = []
+
+  for (const shot of shotScenes) {
+    const cached = known.get(shot.index)
+    const storagePath = `${video.org_id}/${video.id}/${pad(shot.index)}.png`
+    const imagePath = join(workDir, `shot-${pad(shot.index)}.png`)
+
+    if (cached?.storage_path) {
+      const { data, error } = await db.storage.from('generated-images').download(cached.storage_path)
+      if (error || !data) throw new Error(`ดึงภาพที่วาดไว้แล้วไม่ได้: ${error?.message}`)
+      await writeFile(imagePath, Buffer.from(await data.arrayBuffer()))
+      paths.push(imagePath)
+      continue
+    }
+
+    const prompt = prompts.get(shot.index)
+    if (!prompt) throw new Error(`ไม่มี prompt วาดภาพให้ช็อตที่เริ่มฉาก ${shot.index}`)
+
+    const bytes = await generateImage(prompt, { orientation, quality: DEFAULT_QUALITY })
+
+    /**
+     * เก็บขึ้น Storage "ก่อน" บันทึกแถว — ลำดับนี้สำคัญ
+     * บันทึกแถวก่อนแล้วอัปไม่สำเร็จ = แถวชี้ไปไฟล์ที่ไม่มีอยู่ แล้ว retry รอบหน้า
+     * จะเชื่อว่ามีภาพแล้วและไปพังตอนดาวน์โหลดแทนที่จะวาดใหม่ให้
+     */
+    const { error: uploadError } = await db.storage
+      .from('generated-images')
+      .upload(storagePath, bytes, { contentType: 'image/png', upsert: true })
+
+    if (uploadError) throw new Error(`เก็บภาพที่วาดไม่สำเร็จ: ${uploadError.message}`)
+
+    const { error } = await db.from('video_assets').upsert(
+      {
+        org_id: video.org_id,
+        video_id: video.id,
+        scene_index: shot.index,
+        provider: 'openai',
+        provider_id: IMAGE_MODEL,
+        // ไม่มีช่างภาพและไม่มีหน้าเว็บต้นทาง — check constraint ยอมให้ null
+        // เฉพาะ provider ที่ไม่ใช่ pexels (ข้อสัญญาที่ให้ Pexels ไว้ยังบังคับอยู่)
+        photographer: null,
+        source_url: null,
+        storage_path: storagePath,
+        query: prompt,
+      },
+      { onConflict: 'video_id,scene_index' },
+    )
+
+    if (error) throw new Error(`บันทึกภาพที่วาดไม่สำเร็จ: ${error.message}`)
+
+    await writeFile(imagePath, bytes)
+    paths.push(imagePath)
+  }
+
+  // ภาพที่วาดเองไม่มีเครดิตช่างภาพ — คำอธิบายใช้บรรทัดเปิดเผยว่าเป็นภาพ AI แทน
+  return { paths, credits: [] }
 }

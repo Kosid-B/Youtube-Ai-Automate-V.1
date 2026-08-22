@@ -5,6 +5,13 @@ import { saveCta, saveStyle, saveTarget, topUpCredits, type SettingsState } from
 import { VISIBLE_CHARS } from '@/lib/description'
 import { MAX_CLAIM_CHARS, MAX_PROOF_POINTS, MAX_SOURCE_CHARS, type ProofPoint } from '@/lib/proof'
 import { SCRIPT_STYLE_HINT, SCRIPT_STYLE_LABEL, type ScriptStyle } from '@/lib/sales-style'
+import { imageCostUsd } from '@/lib/image-gen'
+import type { ImageSource } from '@/lib/database.types'
+
+const IMAGE_SOURCES: { key: ImageSource; label: string; hint: string }[] = [
+  { key: 'pexels', label: 'ภาพสต็อก', hint: 'ฟรี แต่จำกัด 200 คำค้น/ชม. ทั้งบัญชี' },
+  { key: 'generated', label: 'ให้ AI วาด', hint: 'ไม่มีเพดาน ตรงเนื้อหากว่า แต่เสียเงินต่อภาพ' },
+]
 
 const INITIAL: SettingsState = { error: null, ok: null }
 
@@ -142,13 +149,16 @@ export function StyleForm({
   channelId,
   current,
   proof,
+  imageSource,
 }: {
   channelId: string
   current: ScriptStyle
   proof: ProofPoint[]
+  imageSource: ImageSource
 }) {
   const [state, action, pending] = useActionState(saveStyle, INITIAL)
   const [style, setStyle] = useState<ScriptStyle>(current)
+  const [source, setSource] = useState<ImageSource>(imageSource)
 
   // แสดงช่องว่างเพิ่มหนึ่งแถวเสมอ เพื่อให้เพิ่มข้อใหม่ได้โดยไม่ต้องกดปุ่มอะไรก่อน
   const rows = [...proof, { claim: '', source: '' }].slice(0, MAX_PROOF_POINTS)
@@ -157,6 +167,7 @@ export function StyleForm({
     <form action={action} className="mt-3">
       <input type="hidden" name="channelId" value={channelId} />
       <input type="hidden" name="style" value={style} />
+      <input type="hidden" name="imageSource" value={source} />
 
       <div className="grid grid-cols-2 gap-2">
         {(['informative', 'direct'] as const).map((key) => (
@@ -208,13 +219,40 @@ export function StyleForm({
         </div>
       )}
 
+      <div className="mt-5">
+        <p className="text-sm font-medium">ภาพประกอบ</p>
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          {IMAGE_SOURCES.map((option) => (
+            <button
+              key={option.key}
+              type="button"
+              onClick={() => setSource(option.key)}
+              aria-pressed={source === option.key}
+              className={`rounded-lg border px-3 py-2.5 text-left transition ${
+                source === option.key ? 'border-ink bg-surface-2' : 'border-line hover:border-ink-muted'
+              }`}
+            >
+              <span className="block text-sm font-medium">{option.label}</span>
+              <span className="mt-0.5 block text-xs leading-snug text-ink-muted">{option.hint}</span>
+            </button>
+          ))}
+        </div>
+        {source === 'generated' && (
+          <p className="mt-2 text-xs leading-relaxed text-ink-muted">
+            คลิปยาวพิเศษใช้ราว 45 ภาพ ≈ ${imageCostUsd(45).toFixed(2)} ต่อคลิป ·
+            ระบบจะใส่บรรทัดเปิดเผยว่าเป็นภาพ AI ในคำอธิบายให้อัตโนมัติ
+            และตอนอัปขึ้น YouTube ต้องติ๊กช่อง &ldquo;altered or synthetic content&rdquo; ด้วย
+          </p>
+        )}
+      </div>
+
       <button
         type="submit"
         disabled={pending}
         className={`${BUTTON} mt-4`}
         style={{ color: 'var(--color-base)', background: 'var(--color-ink)' }}
       >
-        {pending ? 'กำลังบันทึก…' : 'บันทึกโทนการเล่า'}
+        {pending ? 'กำลังบันทึก…' : 'บันทึกการตั้งค่าช่อง'}
       </button>
       <Feedback state={state} />
     </form>

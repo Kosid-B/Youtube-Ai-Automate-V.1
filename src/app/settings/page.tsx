@@ -47,7 +47,9 @@ export default async function SettingsPage() {
    * สมาชิกองค์กรอ่านได้อยู่แล้ว และการแก้ rpc ที่มีอยู่ต้อง drop ก่อนสร้างใหม่
    * (เปลี่ยน return type ของฟังก์ชันที่มีอยู่แล้วไม่ได้) ซึ่งไม่คุ้มกับสองคอลัมน์
    */
-  const { data: styles } = await supabase.from('channels').select('id, script_style, proof_points')
+  const { data: styles } = await supabase
+    .from('channels')
+    .select('id, script_style, proof_points, image_source')
   const styleOf = new Map((styles ?? []).map((row) => [row.id, row]))
 
   const clipsLeft = Math.floor(org.credits / CREDITS_PER_CLIP)
@@ -78,7 +80,7 @@ export default async function SettingsPage() {
         <TargetForm current={org.monthly_target} />
       </Card>
 
-      <Card title="โทนการเล่าของคลิป" hint={`${channels?.length ?? 0} ช่อง`}>
+      <Card title="โทนการเล่า + ภาพประกอบ" hint={`${channels?.length ?? 0} ช่อง`}>
         <ul className="mt-1 divide-y divide-line">
           {(channels ?? []).map((channel) => {
             const row = styleOf.get(channel.channel_id)
@@ -89,6 +91,7 @@ export default async function SettingsPage() {
                   channelId={channel.channel_id}
                   current={row?.script_style ?? 'direct'}
                   proof={parseProofPoints(row?.proof_points)}
+                  imageSource={row?.image_source ?? 'pexels'}
                 />
               </li>
             )

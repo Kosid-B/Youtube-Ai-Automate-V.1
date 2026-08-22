@@ -195,7 +195,72 @@ const IMAGE_QUERY_SYSTEM = `คุณแปลงเนื้อหาแต่�
 - อย่าใช้คำค้นซ้ำกันสองฉาก คลิปจะดูเหมือนวนภาพเดิม
 - ห้ามใส่ชื่อแบรนด์ ชื่อคนจริง หรือโลโก้`
 
+const IMAGE_PROMPT_SYSTEM = `คุณเขียน prompt ภาษาอังกฤษให้โมเดลสร้างภาพ วาดภาพประกอบของคลิป
+
+นี่ไม่ใช่คำค้นภาพสต็อก — เป็นคำสั่งวาด ต้องบรรยายให้เห็นภาพ ไม่ใช่ใส่คีย์เวิร์ด
+
+กติกา:
+- ตอบเป็นภาษาอังกฤษเท่านั้น
+- หนึ่งประโยคถึงสองประโยค บรรยายสิ่งที่อยู่ในภาพ มุมกล้อง และแสง
+- ⚠️ ห้ามมีตัวหนังสือ ตัวเลข ป้าย หน้าจอที่อ่านออก หรือกราฟที่มีตัวอักษรในภาพเด็ดขาด
+  โมเดลสร้างภาพเขียนอักษรไทยไม่ได้ ออกมาเป็นอักษรมั่วซึ่งเห็นชัดมากว่าเป็นภาพ AI
+  ต้องสั่งไว้ใน prompt ทุกใบว่า no text, no letters, no numbers, no signage
+- ห้ามใส่ใบหน้าที่เห็นชัด ชื่อแบรนด์ โลโก้ หรือคนที่ระบุตัวได้
+  (ใช้มุมหลัง มุมมือ หรือระยะไกลแทน)
+- ต้องเป็นสิ่งที่ "เห็นได้" ไม่ใช่แนวคิด
+  ฉากพูดถึงร้านกาแฟเจ๊ง → ร้านว่างเปล่าเก้าอี้คว่ำบนโต๊ะ ไม่ใช่ "ความล้มเหลว"
+- ทุกใบในคลิปเดียวกันต้องดูเป็นชุดเดียวกัน — ใส่คำบรรยายสไตล์เดียวกันซ้ำทุกใบ
+  (โทนสี ชนิดแสง ระยะภาพ) ไม่งั้นคลิปจะดูเหมือนเอาภาพคนละที่มาแปะกัน
+- ห้ามให้สองใบในคลิปเดียวกันเป็นภาพเดียวกัน คนดูจะรู้สึกว่าวนภาพเดิม`
+
 export type SceneImageQuery = { sceneIndex: number; query: string }
+
+/**
+ * เขียน prompt วาดภาพให้แต่ละช็อต
+ *
+ * แยกจาก sceneImageQueries() เพราะเป็นงานคนละอย่าง — อันนั้นได้ "คีย์เวิร์ดไปค้น"
+ * อันนี้ได้ "คำสั่งวาด" · เอา prompt ค้นสต็อกไปสั่งวาดจะได้ภาพแบนที่ไม่มีองค์ประกอบ
+ *
+ * เรียกครั้งเดียวได้ทุกช็อต เพื่อให้โมเดลเห็นภาพอื่นที่ตัวเองสั่งไปแล้ว
+ * จะได้คุมให้เป็นชุดเดียวกันและไม่ซ้ำกันเอง — เรียกทีละใบทำสองอย่างนี้ไม่ได้เลย
+ */
+export async function shotImagePrompts(
+  shots: readonly { index: number; text: string }[],
+  context: { title: string; niche?: string | null },
+): Promise<SceneImageQuery[]> {
+  if (shots.length === 0) return []
+
+  const response = await anthropic().messages.create({
+    model: SCRIPT_MODEL,
+    max_tokens: 8000,
+    thinking: { type: 'adaptive' },
+    output_config: {
+      effort: 'low',
+      format: { type: 'json_schema', schema: IMAGE_QUERY_SCHEMA },
+    },
+    system: IMAGE_PROMPT_SYSTEM,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          `หัวข้อคลิป: ${context.title}`,
+          context.niche ? `แนวเนื้อหา: ${context.niche}` : null,
+          '',
+          'แต่ละช็อต (ภาพหนึ่งใบต่อหนึ่งช็อต ต้องอยู่ได้ตลอดช็อต):',
+          ...shots.map((shot) => `[${shot.index}] ${shot.text}`),
+        ]
+          .filter((line) => line !== null)
+          .join('\n'),
+      },
+    ],
+  })
+
+  const block = response.content.find((part) => part.type === 'text')
+  if (!block || block.type !== 'text') throw new Error('โมเดลไม่ได้ตอบเป็นข้อความ')
+
+  const parsed = JSON.parse(block.text) as { queries: { scene_index: number; query: string }[] }
+  return parsed.queries.map((item) => ({ sceneIndex: item.scene_index, query: item.query }))
+}
 
 /**
  * หาคำค้นภาพภาษาอังกฤษให้ทุกฉากในคำขอเดียว

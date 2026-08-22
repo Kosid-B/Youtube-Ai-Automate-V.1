@@ -144,6 +144,7 @@ export async function saveStyle(
   if (!channelId) return { error: 'ไม่มีรหัสช่อง', ok: null }
 
   const style = formData.get('style') === 'direct' ? 'direct' : 'informative'
+  const imageSource = formData.get('imageSource') === 'generated' ? 'generated' : 'pexels'
 
   // ฟอร์มส่งมาเป็นคู่ claim/source ตามลำดับ — ข้อที่เว้นว่างทั้งคู่คือช่องที่ไม่ได้กรอก
   const claims = formData.getAll('claim').map(String)
@@ -159,7 +160,7 @@ export async function saveStyle(
   const supabase = await createClient()
   const { error } = await supabase
     .from('channels')
-    .update({ script_style: style, proof_points: points })
+    .update({ script_style: style, proof_points: points, image_source: imageSource })
     .eq('id', channelId)
 
   if (error) return { error: error.message, ok: null }
