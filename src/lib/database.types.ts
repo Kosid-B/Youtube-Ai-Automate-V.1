@@ -21,10 +21,54 @@ export type ImageSource = 'pexels' | 'generated'
 /** สถานะงานสร้างคลิปโฆษณา — ต้องตรงกับ enum video_gen_status */
 export type VideoGenStatus = 'queued' | 'running' | 'done' | 'failed'
 
+export type VideoProjectRow = {
+  id: string
+  org_id: string
+  created_by: string
+  title: string
+  objective: string | null
+  audience: string | null
+  platform: string
+  aspect_ratio: '9:16' | '16:9'
+  status: string
+  created_at: string
+  updated_at: string
+}
+
+export type VideoScriptRow = {
+  id: string
+  project_id: string
+  org_id: string
+  hook: string | null
+  script: string | null
+  cta: string | null
+  storyboard: Json
+  created_at: string
+  updated_at: string
+}
+
+export type VideoGenerationMetricRow = {
+  id: string
+  generation_id: string
+  org_id: string
+  platform: string
+  impressions: number
+  views: number
+  watch_time_seconds: number
+  clicks: number
+  leads: number
+  conversions: number
+  measured_at: string
+  created_at: string
+}
+
 export type VideoGenerationRow = {
   id: string
   org_id: string
   channel_id: string | null
+  project_id: string | null
+  idempotency_key: string | null
+  routing_policy: 'cheap' | 'fast' | 'quality' | 'auto'
   prompt: string
   aspect: '9:16' | '16:9'
   seconds: number
@@ -35,8 +79,12 @@ export type VideoGenerationRow = {
   /** ไม่มีอันนี้ = ถามสถานะไม่ได้และเงินที่จ่ายไปสูญ */
   provider_job_id: string | null
   /** ราคาที่ประมาณไว้ตอนสั่ง ไม่ใช่จากบิลจริง — ห้ามเอาไปคิดกำไรขาดทุน */
-  cost_usd: number
-  storage_path: string | null
+  estimated_cost_usd: number
+  /** ราคาจากบิลจริง — null จนกว่าจะมีคนกรอก/ซิงก์เข้ามา */
+  actual_cost_usd: number | null
+  output_storage_path: string | null
+  provider_output_url: string | null
+  error_code: string | null
   error: string | null
   created_at: string
   updated_at: string
@@ -254,6 +302,9 @@ export type Database = {
       youtube_projects: TableShape<YoutubeProjectRow>
       video_assets: TableShape<VideoAssetRow>
       video_generations: TableShape<VideoGenerationRow>
+      video_projects: TableShape<VideoProjectRow>
+      video_scripts: TableShape<VideoScriptRow>
+      video_generation_metrics: TableShape<VideoGenerationMetricRow>
       content_features: TableShape<ContentFeaturesRow>
     }
     Views: Record<string, never>
