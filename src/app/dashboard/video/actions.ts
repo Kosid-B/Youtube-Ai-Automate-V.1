@@ -20,6 +20,7 @@ import { generateRateLimiter } from '@/lib/video/rate-limit'
 import { cancelGeneration, dispatchGeneration } from '@/lib/video/orchestrator'
 import { VideoProviderError, type VideoProviderId } from '@/lib/video/types'
 import { logVideo } from '@/lib/video/log'
+import { enqueueJob } from '@/lib/jobs'
 
 export type ActionState = { error: string | null; ok: string | null }
 
@@ -199,6 +200,19 @@ export async function generateVideo(_prev: ActionState, formData: FormData): Pro
         status: 'running',
       })
       .eq('id', row.id)
+
+    /**
+     * เข้าคิวให้ worker วนถามสถานะจนจบแล้วโหลดไฟล์เก็บ
+     *
+     * ⚠️ ล้มตรงนี้ต้องไม่ทำให้คำขอล้ม — เงินออกไปแล้วและงานฝั่งผู้ให้บริการเดินอยู่
+     * บอกผู้ใช้ว่าล้มทั้งที่คลิปกำลังถูกสร้างคือทำให้เขาสั่งซ้ำแล้วจ่ายสองรอบ
+     * แถวมี provider_job_id แล้ว เก็บกู้ทีหลังได้เสมอ
+     */
+    try {
+      await enqueueJob(admin, found.orgId, 'video_poll', { generation_id: row.id })
+    } catch (queueError) {
+      console.error(`[video] เข้าคิวติดตามงาน ${row.id} ไม่สำเร็จ:`, queueError)
+    }
 
     revalidatePath('/dashboard/video')
 

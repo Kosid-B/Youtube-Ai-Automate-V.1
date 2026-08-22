@@ -29,6 +29,10 @@ export type AnalyticsEvent =
   | 'render_completed'
   | 'render_failed'
   | 'job_dead'
+  // ── คลิปโฆษณาที่ผู้ให้บริการสร้างให้ (คนละสายกับ render ข้างบน) ──
+  | 'ad_video_requested'
+  | 'ad_video_completed'
+  | 'ad_video_failed'
   // ── ฝั่งผลงาน: คลิปที่ปล่อยออกไปได้ผลแค่ไหน ──
   | 'video_published'
   | 'video_metrics_synced'

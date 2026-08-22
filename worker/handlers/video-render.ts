@@ -6,7 +6,7 @@ import { promisify } from 'node:util'
 
 import type { WorkerClient } from '../supabase'
 import { heartbeatJob, type JobPayloads } from '@/lib/jobs'
-import type { JobContext } from '../run'
+import type { JobContext } from '../job-context'
 import { sceneImageQueries, shotImagePrompts } from '@/lib/anthropic'
 import { buildConcatCommand, buildFfmpegCommand } from '@/lib/ffmpeg'
 import {
@@ -17,7 +17,7 @@ import {
   GENERATED_IMAGE_NOTICE,
   type PexelsPhoto,
 } from '@/lib/pexels'
-import { DEFAULT_QUALITY, generateImage, imageCostUsd, IMAGE_MODEL } from '@/lib/image-gen'
+import { DEFAULT_QUALITY, generateImage, imageCostUsd, imageModel } from '@/lib/image-gen'
 import { buildRenderPlan } from '@/lib/render-plan'
 import { concatListFile, planChunks } from '@/lib/render-chunks'
 import { planShots, shotSceneCounts, shotText, type Shot } from '@/lib/shots'
@@ -642,7 +642,7 @@ async function drawImages(
         video_id: video.id,
         scene_index: shot.index,
         provider: 'openai',
-        provider_id: IMAGE_MODEL,
+        provider_id: imageModel(),
         // ไม่มีช่างภาพและไม่มีหน้าเว็บต้นทาง — check constraint ยอมให้ null
         // เฉพาะ provider ที่ไม่ใช่ pexels (ข้อสัญญาที่ให้ Pexels ไว้ยังบังคับอยู่)
         photographer: null,

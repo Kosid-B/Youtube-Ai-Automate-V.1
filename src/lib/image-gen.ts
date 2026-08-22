@@ -18,8 +18,13 @@
 
 const ENDPOINT = 'https://api.openai.com/v1/images/generations'
 
-/** ตรวจเอกสาร ส.ค. 2569 — gpt-image-1 ประกาศเลิกใช้ 23 ต.ค. 2569 อย่าถอยกลับไปใช้ */
-export const IMAGE_MODEL = process.env.OPENAI_IMAGE_MODEL ?? 'gpt-image-2'
+/**
+ * ตรวจเอกสาร ส.ค. 2569 — gpt-image-1 ประกาศเลิกใช้ 23 ต.ค. 2569 อย่าถอยกลับไปใช้
+ * อ่านตอนเรียก ไม่ใช่ตอนโหลดโมดูล (ดู __tests__/env-at-module-load.test.ts)
+ */
+export function imageModel(): string {
+  return process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2'
+}
 
 export type ImageQuality = 'low' | 'medium' | 'high'
 
@@ -104,7 +109,7 @@ export async function generateImage(
       'content-type': 'application/json',
     },
     body: JSON.stringify({
-      model: IMAGE_MODEL,
+      model: imageModel(),
       prompt: trimmed,
       size: imageSize(options.orientation),
       quality: options.quality ?? DEFAULT_QUALITY,

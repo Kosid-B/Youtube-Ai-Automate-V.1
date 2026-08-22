@@ -11,6 +11,7 @@ export type JobPayloads = {
   video_render: { video_id: string; script_id: string }
   youtube_upload: { video_id: string; channel_id: string }
   metrics_sync: { channel_id: string; day?: string }
+  video_poll: { generation_id: string }
 }
 
 export type JobPayload<K extends JobKind = JobKind> = JobPayloads[K]

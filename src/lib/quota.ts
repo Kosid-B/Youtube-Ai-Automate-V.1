@@ -15,7 +15,17 @@ export const QUOTA_COST = {
   thumbnailsSet: 50,
 } as const
 
-export const DAILY_QUOTA_LIMIT = Number(process.env.YOUTUBE_QUOTA_DAILY_LIMIT ?? 10000)
+/**
+ * เพดานต่อวันต่อ project — อ่านตอนเรียก ไม่ใช่ตอนโหลดโมดูล
+ *
+ * ⚠️ เคยเป็น `const DAILY_QUOTA_LIMIT = Number(process.env...)` ระดับบนสุด
+ * ซึ่งถูกตรึงตั้งแต่ ESM ประเมิน import คือ "ก่อน" loadEnv() ของ worker เสมอ
+ * ผลคือค่าที่ตั้งใน .env.local ไม่เคยมีผล และไม่มีอะไรฟ้อง (ที่มาของ worker/env.ts)
+ */
+export function dailyQuotaLimit(): number {
+  const raw = Number(process.env.YOUTUBE_QUOTA_DAILY_LIMIT)
+  return Number.isFinite(raw) && raw > 0 ? raw : 10000
+}
 
 /**
  * จองโควตาก่อนยิง API จริงเสมอ — ห้ามยิงแล้วค่อยนับ
@@ -30,7 +40,7 @@ export async function reserveQuota(
   const { data, error } = await db.rpc('reserve_quota', {
     p_project_key: projectKey,
     p_units: units,
-    p_daily_limit: DAILY_QUOTA_LIMIT,
+    p_daily_limit: dailyQuotaLimit(),
   })
 
   if (error) throw new Error(`จองโควตาไม่สำเร็จ: ${error.message}`)

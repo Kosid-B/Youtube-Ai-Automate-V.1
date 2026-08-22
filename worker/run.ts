@@ -14,6 +14,8 @@ import { scriptGenerate } from './handlers/script-generate'
 import { videoRender } from './handlers/video-render'
 import { youtubeUpload } from './handlers/youtube-upload'
 import { metricsSync } from './handlers/metrics-sync'
+import { videoPoll } from './handlers/video-poll'
+import type { JobContext } from './job-context'
 
 const WORKER_ID = process.env.WORKER_ID ?? `worker-${process.pid}`
 const POLL_INTERVAL_MS = Number(process.env.WORKER_POLL_INTERVAL_MS ?? 2000)
@@ -22,8 +24,6 @@ const POLL_INTERVAL_MS = Number(process.env.WORKER_POLL_INTERVAL_MS ?? 2000)
  * handler ที่รันนานใช้ ctx.jobId ส่งสัญญาณชีพ (heartbeatJob) ระหว่างทาง
  * handler ที่จบเร็วละพารามิเตอร์ตัวนี้ไปได้เลย
  */
-export type JobContext = { jobId: string }
-
 type Handler<K extends JobKind> = (
   db: WorkerClient,
   payload: JobPayloads[K],
@@ -36,6 +36,7 @@ const HANDLERS: { [K in JobKind]: Handler<K> } = {
   video_render: videoRender,
   youtube_upload: youtubeUpload,
   metrics_sync: metricsSync,
+  video_poll: videoPoll,
 }
 
 let running = true

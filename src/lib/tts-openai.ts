@@ -13,8 +13,13 @@ import { wavDurationSeconds, type SynthesizedAudio } from '@/lib/tts'
 
 const ENDPOINT = 'https://api.openai.com/v1/audio/speech'
 
-/** gpt-4o-mini-tts รับ instructions ได้ ซึ่งเป็นทางเดียวที่บอกให้พูดสำเนียงไทยชัด ๆ */
-export const OPENAI_TTS_MODEL = process.env.OPENAI_TTS_MODEL ?? 'gpt-4o-mini-tts'
+/**
+ * gpt-4o-mini-tts รับ instructions ได้ ซึ่งเป็นทางเดียวที่บอกให้พูดสำเนียงไทยชัด ๆ
+ * อ่านตอนเรียก ไม่ใช่ตอนโหลดโมดูล (ดู __tests__/env-at-module-load.test.ts)
+ */
+export function openAiTtsModel(): string {
+  return process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts'
+}
 
 /** เพดานต่อคำขอ — ฉากของเรายาว ~210 ตัวอักษร จึงไม่เคยชน แต่ตรวจไว้กันเงียบ */
 export const MAX_INPUT_CHARS = 4096
@@ -76,7 +81,7 @@ export async function synthesizeOpenAi(
       'content-type': 'application/json',
     },
     body: JSON.stringify({
-      model: OPENAI_TTS_MODEL,
+      model: openAiTtsModel(),
       input: trimmed,
       voice: options.voice ?? process.env.OPENAI_TTS_VOICE ?? 'alloy',
       // WAV เท่านั้น — ต้องอ่านความยาวจากหัวไฟล์โดยไม่เรียก ffprobe

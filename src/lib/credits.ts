@@ -11,6 +11,9 @@ export const JOB_COST: Record<JobKind, number> = {
   video_render: 5,
   youtube_upload: 1,
   metrics_sync: 0,
+  // การวนถามสถานะไม่คิดเครดิต — เงินออกไปแล้วตอนสั่งสร้าง
+  // คิดซ้ำตรงนี้เท่ากับเก็บเงินผู้ใช้สำหรับการรอ ซึ่งไม่ใช่บริการอะไร
+  video_poll: 0,
 }
 
 export class InsufficientCreditsError extends Error {

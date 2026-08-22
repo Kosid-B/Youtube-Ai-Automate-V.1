@@ -105,6 +105,8 @@ export type JobKind =
   | 'video_render'
   | 'youtube_upload'
   | 'metrics_sync'
+  /** วนถามผู้ให้บริการวิดีโอจนงานจบ แล้วโหลดไฟล์เก็บ (jobs.kind เป็น text ไม่ต้อง migrate) */
+  | 'video_poll'
 
 export type ContentFeaturesRow = {
   id: string

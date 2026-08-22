@@ -19,7 +19,7 @@ import { loadEnv } from '../worker/env'
 
 loadEnv()
 
-const { synthesizeOpenAi, OPENAI_VOICES, OPENAI_TTS_MODEL } = await import('../src/lib/tts-openai')
+const { synthesizeOpenAi, OPENAI_VOICES, openAiTtsModel } = await import('../src/lib/tts-openai')
 
 /** ประโยคเดียวกับฝั่ง Google จะได้เทียบกันตรง ๆ — มีวรรณยุกต์ สระบน-ล่าง และตัวเลข */
 const DEFAULT_TEXT =
@@ -42,7 +42,7 @@ const chosen = args.includes('--all')
 const outDir = join(process.cwd(), 'voice-samples', 'openai')
 mkdirSync(outDir, { recursive: true })
 
-console.log(`อัด ${chosen.length} เสียงด้วย ${OPENAI_TTS_MODEL} · ข้อความยาว ${text.length} ตัวอักษร\n`)
+console.log(`อัด ${chosen.length} เสียงด้วย ${openAiTtsModel()} · ข้อความยาว ${text.length} ตัวอักษร\n`)
 
 let ok = 0
 

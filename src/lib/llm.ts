@@ -23,7 +23,9 @@ export const SCRIPT_MODEL = 'claude-opus-5'
  * เดาไว้ในโค้ดแล้วผิดจะได้ 404 ที่ไม่บอกว่าให้ไปแก้ตรงไหน
  * ดูรายชื่อที่บัญชีคุณเรียกได้จริงด้วย: pnpm preflight
  */
-export const OPENAI_TEXT_MODEL = process.env.OPENAI_TEXT_MODEL ?? 'gpt-5.6-terra'
+export function openAiTextModel(): string {
+  return process.env.OPENAI_TEXT_MODEL || 'gpt-5.6-terra'
+}
 
 export type Provider = 'anthropic' | 'openai'
 
@@ -90,7 +92,7 @@ async function completeOpenAi(input: CompleteInput): Promise<string> {
     method: 'POST',
     headers: { Authorization: `Bearer ${key}`, 'content-type': 'application/json' },
     body: JSON.stringify({
-      model: OPENAI_TEXT_MODEL,
+      model: openAiTextModel(),
       max_completion_tokens: input.maxTokens,
       reasoning_effort: input.effort,
       messages: [
@@ -123,7 +125,7 @@ async function completeOpenAi(input: CompleteInput): Promise<string> {
      */
     if (response.status === 404 || detail.includes('does not exist')) {
       throw new Error(
-        `บัญชีนี้เรียกโมเดล "${OPENAI_TEXT_MODEL}" ไม่ได้ — ตั้ง OPENAI_TEXT_MODEL ` +
+        `บัญชีนี้เรียกโมเดล "${openAiTextModel()}" ไม่ได้ — ตั้ง OPENAI_TEXT_MODEL ` +
           'ให้ตรงกับที่บัญชีมี (ดูรายชื่อด้วย pnpm preflight)',
       )
     }

@@ -8,8 +8,14 @@
  * ก่อนใช้ตัวเลขนี้ตัดสินใจเรื่องเงินจริง ให้ไปเช็คหน้าราคาปัจจุบันก่อน
  */
 
-/** อัตราแลกเปลี่ยนโดยประมาณ ตั้งผ่าน env ได้เพื่อไม่ต้องแก้โค้ดตอนค่าเงินขยับ */
-export const THB_PER_USD = Number(process.env.THB_PER_USD ?? 36)
+/**
+ * อัตราแลกเปลี่ยนโดยประมาณ ตั้งผ่าน env ได้เพื่อไม่ต้องแก้โค้ดตอนค่าเงินขยับ
+ * อ่านตอนเรียก ไม่ใช่ตอนโหลดโมดูล (ดู __tests__/env-at-module-load.test.ts)
+ */
+export function thbPerUsd(): number {
+  const raw = Number(process.env.THB_PER_USD)
+  return Number.isFinite(raw) && raw > 0 ? raw : 36
+}
 
 export type TtsProviderId =
   | 'google-neural2'
@@ -107,8 +113,9 @@ export function estimateClipCost(input: EstimateInput): CostEstimate {
   const billableChars = Math.max(input.scriptChars - freeLeft, 0)
   const ttsUsd = (billableChars * tts.usdPerMillionChars) / 1_000_000
 
-  const scriptThb = round2(scriptUsd * THB_PER_USD)
-  const ttsThb = round2(ttsUsd * THB_PER_USD)
+  const rate = thbPerUsd()
+  const scriptThb = round2(scriptUsd * rate)
+  const ttsThb = round2(ttsUsd * rate)
 
   return {
     scriptThb,
