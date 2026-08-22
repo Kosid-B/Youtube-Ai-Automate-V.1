@@ -283,6 +283,55 @@ function checkProviders(): Result {
   return ok(detail)
 }
 
+/**
+ * ผู้ให้บริการสร้างคลิปโฆษณา — ไม่ตั้งคีย์เลย = ฟีเจอร์ปิด ไม่ใช่ error
+ *
+ * ตรวจว่า "ตั้งครบพอให้ด่านคุมงบทำงาน" ไม่ใช่แค่มีคีย์ — Runway ที่มีคีย์
+ * แต่ไม่ได้ตั้งราคา ระบบจะปฏิเสธไม่ให้ใช้อยู่ดี ซึ่งดูเหมือนพร้อมแต่ใช้ไม่ได้
+ */
+async function checkVideoProviders(): Promise<Result> {
+  const hasVeo = Boolean(process.env.GOOGLE_AI_API_KEY || process.env.GEMINI_API_KEY)
+  const hasRunway = Boolean(process.env.RUNWAY_API_KEY)
+
+  if (!hasVeo && !hasRunway) return skip('ไม่ได้ตั้งคีย์ — ฟีเจอร์คลิปโฆษณาปิดอยู่')
+
+  const notes: string[] = []
+  const problems: string[] = []
+
+  if (hasVeo) {
+    const key = process.env.GOOGLE_AI_API_KEY ?? process.env.GEMINI_API_KEY
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${key}`,
+    ).catch(() => null)
+
+    if (!response) {
+      problems.push('Veo: ต่อไม่ได้')
+    } else if (!response.ok) {
+      problems.push(`Veo: คีย์ใช้ไม่ได้ (${response.status})`)
+    } else {
+      const body = (await response.json()) as { models?: { name?: string }[] }
+      const ids = (body.models ?? []).map((m) => (m.name ?? '').replace('models/', ''))
+      const veo = ids.filter((id) => id.includes('veo'))
+      notes.push(veo.length > 0 ? `Veo: มี ${veo.length} รุ่น` : 'Veo: คีย์ใช้ได้แต่ยังไม่เห็นรุ่น veo')
+    }
+  }
+
+  if (hasRunway) {
+    // ราคาสำคัญกว่าคีย์ — ไม่มีราคา ด่านคุมงบทำงานไม่ได้ ระบบจะปฏิเสธเอง
+    const priced = Number(process.env.RUNWAY_USD_PER_SECOND) > 0
+    if (priced) notes.push('Runway: พร้อม')
+    else problems.push('Runway: มีคีย์แต่ไม่ได้ตั้ง RUNWAY_USD_PER_SECOND — ระบบจะไม่ยอมใช้')
+  }
+
+  const ceiling = Number(process.env.VIDEO_MAX_COST_USD) > 0
+    ? Number(process.env.VIDEO_MAX_COST_USD)
+    : 5
+  notes.push(`เพดาน $${ceiling.toFixed(2)}/คลิป`)
+
+  if (problems.length > 0) return warn(problems.join(' · '), notes.join(' · '))
+  return ok(notes.join(' · '))
+}
+
 async function checkFfmpeg(): Promise<Result[]> {
   let version: string
   try {
@@ -410,6 +459,7 @@ const CHECKS: [string, () => Promise<Result | Result[]>][] = [
   ['OpenAI (วาดภาพ)', checkOpenAi],
   ['ffmpeg + ฟอนต์ซับ', checkFfmpeg],
   ['ผู้ให้บริการที่เลือก', async () => checkProviders()],
+  ['คลิปโฆษณา (Veo/Runway)', checkVideoProviders],
 ]
 
 console.log('\nตรวจการตั้งค่า yt-factory\n')

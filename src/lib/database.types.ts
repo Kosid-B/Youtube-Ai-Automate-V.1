@@ -17,6 +17,30 @@ export type ScriptStyle = 'informative' | 'direct'
 
 /** แหล่งภาพประกอบ — ต้องตรงกับ enum image_source ในฐานข้อมูล */
 export type ImageSource = 'pexels' | 'generated'
+
+/** สถานะงานสร้างคลิปโฆษณา — ต้องตรงกับ enum video_gen_status */
+export type VideoGenStatus = 'queued' | 'running' | 'done' | 'failed'
+
+export type VideoGenerationRow = {
+  id: string
+  org_id: string
+  channel_id: string | null
+  prompt: string
+  aspect: '9:16' | '16:9'
+  seconds: number
+  provider: string
+  model: string
+  tier: 'lite' | 'fast' | 'quality'
+  status: VideoGenStatus
+  /** ไม่มีอันนี้ = ถามสถานะไม่ได้และเงินที่จ่ายไปสูญ */
+  provider_job_id: string | null
+  /** ราคาที่ประมาณไว้ตอนสั่ง ไม่ใช่จากบิลจริง — ห้ามเอาไปคิดกำไรขาดทุน */
+  cost_usd: number
+  storage_path: string | null
+  error: string | null
+  created_at: string
+  updated_at: string
+}
 export type VideoStatus =
   | 'queued'
   | 'rendering'
@@ -229,6 +253,7 @@ export type Database = {
       credit_ledger: TableShape<CreditLedgerRow>
       youtube_projects: TableShape<YoutubeProjectRow>
       video_assets: TableShape<VideoAssetRow>
+      video_generations: TableShape<VideoGenerationRow>
       content_features: TableShape<ContentFeaturesRow>
     }
     Views: Record<string, never>
@@ -374,6 +399,7 @@ export type Database = {
     Enums: {
       org_role: OrgRole
       video_format: VideoFormat
+      video_gen_status: VideoGenStatus
       script_status: ScriptStatus
       script_style: ScriptStyle
       image_source: ImageSource
